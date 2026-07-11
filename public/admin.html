@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#eef1ed" />
+  <meta name="description" content="南京办公地图审核与贡献者后台" />
+  <title>南京办公地图 · 管理后台</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="admin-page">
+  <div class="admin-shell">
+    <section class="admin-login-view" id="loginView">
+      <div class="login-card">
+        <div class="login-brand">
+          <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
+          <div><h1>贡献者与管理后台</h1><p style="margin:5px 0 0">Nanjing Work Map Portal</p></div>
+        </div>
+        <p>管理员可审核地点、维护地图和邀请贡献者；受邀贡献者可以提交地点并查看自己的审核结果。</p>
+        <form class="admin-form" id="loginForm">
+          <label><span>邮箱</span><input name="email" type="email" required autocomplete="username" /></label>
+          <label><span>密码</span><input name="password" type="password" required autocomplete="current-password" /></label>
+          <button class="primary-button" id="loginButton" type="submit">登录后台</button>
+          <p class="form-feedback" id="loginFeedback"></p>
+        </form>
+        <div class="login-links"><a href="/">返回地图</a><span>普通用户无需登录即可浏览</span></div>
+      </div>
+    </section>
+
+    <section class="portal" id="portalView" hidden>
+      <header class="portal-topbar">
+        <a class="portal-brand" href="/">
+          <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
+          <strong>南京办公地图</strong>
+        </a>
+        <div class="portal-user">
+          <div class="portal-user-copy"><strong id="portalUserName">用户</strong><small id="portalUserRole">贡献者</small></div>
+          <button class="secondary-button" id="logoutButton" type="button" style="min-height:38px">退出</button>
+        </div>
+      </header>
+
+      <div class="portal-layout">
+        <aside class="portal-sidebar">
+          <nav class="portal-nav" id="portalNav"></nav>
+        </aside>
+        <main class="portal-content">
+          <section class="portal-section" id="section-overview" data-section="overview">
+            <div class="section-heading"><div><span class="eyebrow">OVERVIEW</span><h2>工作台</h2><p>审核队列与当前地图数据概览。</p></div></div>
+            <div class="stat-grid" id="statGrid"></div>
+            <div class="admin-panel"><div class="admin-list" id="recentList"></div></div>
+          </section>
+
+          <section class="portal-section" id="section-submissions" data-section="submissions">
+            <div class="section-heading"><div><span class="eyebrow">MODERATION</span><h2>地点审核</h2><p>公开提交和贡献者提交都不会自动发布。</p></div>
+              <select id="submissionStatusFilter" style="min-height:40px;border:1px solid var(--line);border-radius:12px;padding:0 11px;background:#fff"><option value="all">全部状态</option><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select>
+            </div>
+            <div class="admin-panel"><div class="admin-list" id="submissionList"></div></div>
+          </section>
+
+          <section class="portal-section" id="section-places" data-section="places">
+            <div class="section-heading"><div><span class="eyebrow">CURATED DATABASE</span><h2>地点管理</h2><p>示例数据可以编辑或下架，正式发布前请替换为真实地点。</p></div><button class="primary-button" id="newPlaceButton" type="button">新增地点</button></div>
+            <div class="admin-panel"><div class="admin-list" id="placeAdminList"></div></div>
+          </section>
+
+          <section class="portal-section" id="section-contributors" data-section="contributors">
+            <div class="section-heading"><div><span class="eyebrow">TRUSTED CONTRIBUTORS</span><h2>贡献者</h2><p>邀请少量可信用户提交内容，不开放自由注册。</p></div></div>
+            <div class="inline-form-card" style="margin-bottom:18px">
+              <form class="admin-form" id="contributorForm">
+                <div class="form-grid three-col">
+                  <label><span>姓名</span><input name="name" maxlength="80" /></label>
+                  <label><span>邮箱</span><input name="email" type="email" required /></label>
+                  <label><span>临时密码（至少 8 位）</span><input name="password" type="text" minlength="8" required /></label>
+                </div>
+                <div class="form-actions-inline"><button class="primary-button" type="submit">创建贡献者</button></div>
+                <p class="form-feedback" id="contributorFeedback"></p>
+              </form>
+            </div>
+            <div class="admin-panel"><div class="admin-list" id="contributorList"></div></div>
+          </section>
+
+          <section class="portal-section" id="section-contribute" data-section="contribute">
+            <div class="section-heading"><div><span class="eyebrow">CONTRIBUTE</span><h2>提交新地点</h2><p>贡献者提交会标记为优先审核，但不会自动公开。</p></div></div>
+            <div class="inline-form-card">
+              <form class="admin-form" id="portalSubmissionForm">
+                <div class="form-grid two-col">
+                  <label><span>地点名称 *</span><input name="placeName" required /></label>
+                  <label><span>类型 *</span><select name="category"><option value="coffee">咖啡馆</option><option value="library">图书馆 / 城市书房</option><option value="coworking">共享办公</option><option value="public">公共空间</option><option value="hotel">酒店大堂</option></select></label>
+                </div>
+                <label><span>地址 *</span><input name="address" required /></label>
+                <div class="form-grid three-col">
+                  <label><span>区域</span><input name="district" /></label>
+                  <label><span>最近地铁站</span><input name="metroStation" /></label>
+                  <label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" /></label>
+                </div>
+                <div class="form-grid two-col"><label><span>经度</span><input name="lng" type="number" step="0.000001" /></label><label><span>纬度</span><input name="lat" type="number" step="0.000001" /></label></div>
+                <div class="form-grid two-col"><label><span>到访日期 *</span><input name="visitDate" type="date" required /></label><label><span>办公时长 *</span><select name="workDuration" required><option value="">请选择</option><option>30–90 分钟</option><option>1.5–3 小时</option><option>超过 3 小时</option></select></label></div>
+                <div class="form-grid three-col"><label><span>安静程度</span><select name="quietLevel"><option value="5">非常安静</option><option value="4">较安静</option><option value="3" selected>一般</option><option value="2">较吵</option><option value="1">很吵</option></select></label><label><span>Wi-Fi</span><input name="wifi" /></label><label><span>插座</span><input name="outlets" /></label></div>
+                <div class="form-grid two-col"><label><span>营业时间</span><input name="hours" /></label><label><span>消费水平</span><input name="price" /></label></div>
+                <div class="check-row"><label class="check"><input name="callFriendly" type="checkbox" /><span>适合通话</span></label><label class="check"><input name="unlimited" type="checkbox" /><span>通常不限时</span></label><label class="check"><input name="free" type="checkbox" /><span>免费使用</span></label></div>
+                <label><span>实际办公体验 *（至少 40 字）</span><textarea name="description" minlength="40" maxlength="1600" rows="6" required></textarea></label>
+                <label><span>补充说明</span><textarea name="evidenceNote" maxlength="800" rows="3"></textarea></label>
+                <label><span>现场图片（贡献者首版可不上传，建议上传）</span><input id="portalPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label>
+                <div id="portalPhotoPreview" class="photo-preview"><span>暂未选择图片</span></div>
+                <input name="website" class="honeypot" tabindex="-1" autocomplete="off" />
+                <div class="form-actions-inline"><button class="primary-button" id="portalSubmitButton" type="submit">提交审核</button></div>
+                <p class="form-feedback" id="portalSubmitFeedback"></p>
+              </form>
+            </div>
+          </section>
+        </main>
+      </div>
+    </section>
+  </div>
+
+  <div class="admin-drawer-overlay" id="drawerOverlay"></div>
+  <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
+    <div id="drawerContent"></div>
+  </aside>
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>

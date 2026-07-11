@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f5ef" />
+  <meta name="description" content="南京适合电脑办公、远程工作与数字游民使用的精选地点地图。" />
+  <title>南京办公地图</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="public-page">
+  <div id="app" class="app-shell">
+    <header class="topbar glass-panel">
+      <button class="brand" id="brandButton" type="button" aria-label="返回全部地点">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg>
+        </span>
+        <span class="brand-copy">
+          <strong id="appName">南京办公地图</strong>
+          <small id="appNameEn">Nanjing Work Map</small>
+        </span>
+      </button>
+      <div class="topbar-actions">
+        <button class="icon-button" id="searchToggle" type="button" aria-label="搜索地点" title="搜索地点">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.8"/><path d="m16.2 16.2 4.1 4.1"/></svg>
+        </button>
+        <button class="icon-button" id="favoriteToggle" type="button" aria-label="我的收藏" title="我的收藏">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.5c0 5.1-8.8 10.4-8.8 10.4S3.2 13.6 3.2 8.5A4.6 4.6 0 0 1 12 6.7a4.6 4.6 0 0 1 8.8 1.8Z"/></svg>
+        </button>
+        <a class="icon-button" href="/admin" aria-label="贡献者与管理员入口" title="贡献者与管理员入口">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.4-4 2.7-6 6.5-6s6.1 2 6.5 6"/></svg>
+        </a>
+      </div>
+      <div class="search-strip" id="searchStrip" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.8"/><path d="m16.2 16.2 4.1 4.1"/></svg>
+        <input id="searchInput" type="search" placeholder="搜索地点、区域或地铁站" autocomplete="off" />
+        <button id="searchClose" class="text-button" type="button">取消</button>
+      </div>
+    </header>
+
+    <nav class="filter-rail" id="filterRail" aria-label="地点筛选"></nav>
+
+    <main class="map-stage">
+      <div id="map" class="map-canvas" aria-label="南京办公地点地图"></div>
+      <div class="map-status glass-panel" id="mapStatus">
+        <span class="status-dot"></span>
+        <span id="mapStatusText">正在加载地点</span>
+      </div>
+      <button class="location-button glass-panel" id="locationButton" type="button" aria-label="定位到当前位置" title="定位到当前位置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
+    </main>
+
+    <aside class="place-rail glass-panel" id="placeRail" aria-live="polite">
+      <div class="rail-heading">
+        <div>
+          <span class="eyebrow">CURATED FOR WORK</span>
+          <h1>今天在哪里工作？</h1>
+        </div>
+        <span class="count-badge" id="placeCount">0</span>
+      </div>
+      <p class="rail-intro">只展示经过编辑或社区审核的地点，不开放公开星级评分。</p>
+      <div id="placeList" class="place-list"></div>
+    </aside>
+
+    <section class="detail-sheet glass-panel" id="detailSheet" aria-live="polite" aria-hidden="true">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <button class="sheet-close" id="detailClose" type="button" aria-label="关闭地点详情">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+      <div id="detailContent"></div>
+    </section>
+
+    <button class="submit-fab" id="submitOpen" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <span>推荐地点</span>
+    </button>
+  </div>
+
+  <dialog class="modal" id="submitModal">
+    <form class="modal-card submission-form" id="submissionForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">COMMUNITY SUBMISSION</span>
+          <h2>推荐一个真实适合办公的地点</h2>
+        </div>
+        <button class="icon-button modal-close" type="button" data-close-modal="submitModal" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <p class="form-note">提交不会立即公开。请基于真实到访经历填写，并上传至少一张现场图片。</p>
+      <div class="form-grid two-col">
+        <label><span>你的称呼</span><input name="name" maxlength="80" placeholder="例如 Alex" /></label>
+        <label><span>联系邮箱 *</span><input name="email" type="email" required placeholder="用于通知审核结果" /></label>
+      </div>
+      <div class="form-grid two-col">
+        <label><span>地点名称 *</span><input name="placeName" required maxlength="120" /></label>
+        <label><span>地点类型 *</span>
+          <select name="category" required>
+            <option value="coffee">咖啡馆</option>
+            <option value="library">图书馆 / 城市书房</option>
+            <option value="coworking">共享办公</option>
+            <option value="public">公共空间</option>
+            <option value="hotel">酒店大堂</option>
+          </select>
+        </label>
+      </div>
+      <label><span>详细地址 *</span><input name="address" required maxlength="240" placeholder="请写到楼层或入口" /></label>
+      <div class="form-grid three-col">
+        <label><span>区域</span><input name="district" maxlength="60" placeholder="秦淮区" /></label>
+        <label><span>最近地铁站</span><input name="metroStation" maxlength="80" /></label>
+        <label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" /></label>
+      </div>
+      <div class="form-grid two-col">
+        <label><span>经度（可后补）</span><input name="lng" type="number" step="0.000001" placeholder="118.778900" /></label>
+        <label><span>纬度（可后补）</span><input name="lat" type="number" step="0.000001" placeholder="32.041500" /></label>
+      </div>
+      <div class="form-grid two-col">
+        <label><span>实际到访日期 *</span><input name="visitDate" type="date" required /></label>
+        <label><span>实际办公时长 *</span>
+          <select name="workDuration" required>
+            <option value="">请选择</option>
+            <option>30–90 分钟</option>
+            <option>1.5–3 小时</option>
+            <option>超过 3 小时</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-grid three-col">
+        <label><span>安静程度</span><select name="quietLevel"><option value="5">非常安静</option><option value="4">较安静</option><option value="3" selected>一般</option><option value="2">较吵</option><option value="1">很吵</option></select></label>
+        <label><span>Wi-Fi</span><input name="wifi" maxlength="60" placeholder="稳定 / 需登录" /></label>
+        <label><span>插座</span><input name="outlets" maxlength="80" placeholder="充足 / 部分座位" /></label>
+      </div>
+      <div class="form-grid two-col">
+        <label><span>营业时间</span><input name="hours" maxlength="80" placeholder="09:00–22:00" /></label>
+        <label><span>消费水平</span><input name="price" maxlength="60" placeholder="¥30–50 / 免费" /></label>
+      </div>
+      <div class="check-row">
+        <label class="check"><input name="callFriendly" type="checkbox" /><span>适合电话或视频会议</span></label>
+        <label class="check"><input name="unlimited" type="checkbox" /><span>通常不限时</span></label>
+        <label class="check"><input name="free" type="checkbox" /><span>可以免费使用</span></label>
+      </div>
+      <label><span>你的实际办公体验 *（至少 40 字）</span><textarea name="description" required minlength="40" maxlength="1600" rows="5" placeholder="桌面大小、拥挤时段、是否容易找到插座、工作人员是否介意使用电脑……"></textarea></label>
+      <label><span>补充证据或注意事项</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：当天拍摄、店员确认不限时、周末规则可能不同。"></textarea></label>
+      <label class="upload-field">
+        <span>现场图片 *（1–3 张，每张不超过 2.5MB）</span>
+        <input id="photoInput" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required />
+        <div class="photo-preview" id="photoPreview"><span>点击选择图片</span></div>
+      </label>
+      <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+      <div class="modal-actions">
+        <button class="secondary-button" type="button" data-close-modal="submitModal">取消</button>
+        <button class="primary-button" id="submitButton" type="submit">提交审核</button>
+      </div>
+      <p class="form-feedback" id="submissionFeedback" role="status"></p>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="favoriteModal">
+    <div class="modal-card compact-card">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">SAVED PLACES</span>
+          <h2>我的收藏</h2>
+        </div>
+        <button class="icon-button modal-close" type="button" data-close-modal="favoriteModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="favoriteList" class="favorite-list"></div>
+    </div>
+  </dialog>
+
+  <template id="fallbackMapTemplate">
+    <div class="fallback-map-art" aria-hidden="true">
+      <svg viewBox="0 0 1000 760" preserveAspectRatio="none">
+        <defs><filter id="soft"><feGaussianBlur stdDeviation="14"/></filter></defs>
+        <path class="river" d="M620-40C540 120 708 184 640 350S560 600 720 820"/>
+        <path class="road main" d="M-80 250C180 200 300 300 520 240S790 170 1100 260"/>
+        <path class="road main" d="M180-40C250 130 300 260 270 420S230 650 320 820"/>
+        <path class="road" d="M-80 520C180 430 390 520 550 500S820 430 1100 560"/>
+        <path class="road" d="M440-40C420 180 520 260 470 450S430 640 500 820"/>
+        <path class="road" d="M780-40C720 150 850 270 790 470S700 630 850 820"/>
+        <path class="metro" d="M90 360C310 340 480 330 650 370S840 400 980 360"/>
+        <path class="metro alt" d="M360 30C390 190 360 300 420 440S520 640 500 740"/>
+        <circle class="park" cx="180" cy="150" r="80" filter="url(#soft)"/>
+        <circle class="park" cx="810" cy="590" r="95" filter="url(#soft)"/>
+      </svg>
+      <div class="map-label label-xinjiekou">新街口</div>
+      <div class="map-label label-gulou">鼓楼</div>
+      <div class="map-label label-hexi">河西</div>
+      <div class="map-label label-xianlin">仙林</div>
+      <div class="map-label label-south">南京南站</div>
+    </div>
+  </template>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

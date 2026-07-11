@@ -1,0 +1,14 @@
+{
+  "name": "nanjing-work-map",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A curated map of laptop-friendly places in Nanjing, with moderated submissions.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check public/admin.js"
+  }
+}
