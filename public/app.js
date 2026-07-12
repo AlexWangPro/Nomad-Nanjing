@@ -451,12 +451,51 @@ function loadAmap(key, securityCode) {
     script.id = 'amap-jsapi';
     script.charset = 'utf-8';
     script.async = true;
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(cleanKey)}&plugin=AMap.Scale&callback=${encodeURIComponent(callbackName)}`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(cleanKey)}&callback=${encodeURIComponent(callbackName)}`;
     script.onerror = () => {
       cleanup();
       reject(new Error('高德地图脚本无法访问；请检查 CSP、网络或高德服务状态'));
     };
     document.head.appendChild(script);
+  });
+}
+
+function loadAmapPlugin(AMap, pluginName, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const constructorName = pluginName.split('.').pop();
+    if (typeof AMap?.[constructorName] === 'function') {
+      resolve(AMap[constructorName]);
+      return;
+    }
+    if (typeof AMap?.plugin !== 'function') {
+      reject(new Error(`${pluginName} 插件加载器不可用`));
+      return;
+    }
+
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`${pluginName} 插件加载超时`));
+    }, timeoutMs);
+
+    try {
+      AMap.plugin(pluginName, () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        if (typeof AMap[constructorName] === 'function') {
+          resolve(AMap[constructorName]);
+        } else {
+          reject(new Error(`${pluginName} 插件已回调，但构造器不可用`));
+        }
+      });
+    } catch (error) {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      reject(error);
+    }
   });
 }
 
@@ -477,10 +516,18 @@ async function initMap() {
       showLabel: true,
       resizeEnable: true
     });
-    state.map.addControl(new AMap.Scale({ position: { bottom: '18px', right: '82px' } }));
     state.usingFallback = false;
     renderMarkers();
     setStatus(`${state.filtered.length} 个精选地点`, true);
+
+    // Scale 属于高德插件。必须等 AMap.plugin 回调后再实例化；
+    // 插件失败不应让整张地图退回演示模式。
+    try {
+      const Scale = await loadAmapPlugin(AMap, 'AMap.Scale');
+      state.map.addControl(new Scale());
+    } catch (pluginError) {
+      console.warn('[AMap.Scale]', pluginError);
+    }
   } catch (error) {
     console.error('[AMap]', error);
     renderFallback();

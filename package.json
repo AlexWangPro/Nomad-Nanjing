@@ -1,6 +1,6 @@
 {
   "name": "nanjing-work-map",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "A curated map of laptop-friendly places in Nanjing, with moderated submissions.",
   "type": "module",
