@@ -536,12 +536,13 @@ function setSecurityHeaders(res) {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://webapi.amap.com https://*.amap.com",
-    "style-src 'self' 'unsafe-inline' https://webapi.amap.com https://*.amap.com",
+    "script-src 'self' 'unsafe-inline' https://*.amap.com https://*.autonavi.com",
+    "style-src 'self' 'unsafe-inline' https://*.amap.com https://*.autonavi.com",
     "img-src 'self' data: blob: https://*.amap.com https://*.autonavi.com",
     "connect-src 'self' https://*.amap.com https://*.autonavi.com https://restapi.amap.com",
     "font-src 'self' data:",
-    "worker-src 'self' blob:"
+    "worker-src 'self' blob: https://*.amap.com https://*.autonavi.com",
+    "frame-src 'self' https://*.amap.com https://*.autonavi.com"
   ].join('; '));
 }
 
@@ -622,12 +623,22 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === '/api/config' && req.method === 'GET') {
+    const cleanMapValue = (value) => {
+      const text = String(value || '').trim();
+      if ((text.startsWith('\"') && text.endsWith('\"')) || (text.startsWith("'") && text.endsWith("'"))) {
+        return text.slice(1, -1).trim();
+      }
+      return text;
+    };
+    const amapKey = cleanMapValue(process.env.AMAP_JS_KEY);
+    const amapSecurityCode = cleanMapValue(process.env.AMAP_SECURITY_CODE);
     return json(res, 200, {
       appName: process.env.APP_NAME || '南京办公地图',
       appNameEn: process.env.APP_NAME_EN || 'Nanjing Work Map',
-      amapKey: process.env.AMAP_JS_KEY || '',
-      amapSecurityCode: process.env.AMAP_SECURITY_CODE || '',
-      mapMode: process.env.AMAP_JS_KEY ? 'amap' : 'demo',
+      amapKey,
+      amapSecurityCode,
+      mapMode: amapKey ? 'amap' : 'demo',
+      mapConfigReady: Boolean(amapKey && amapSecurityCode),
       adminConfigured: Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET)
     });
   }

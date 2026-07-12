@@ -421,12 +421,41 @@ function locateUser() {
 function loadAmap(key, securityCode) {
   return new Promise((resolve, reject) => {
     if (window.AMap) return resolve(window.AMap);
-    if (securityCode) window._AMapSecurityConfig = { securityJsCode: securityCode };
+
+    const cleanKey = String(key || '').trim().replace(/^['"]|['"]$/g, '');
+    const cleanSecurityCode = String(securityCode || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!cleanKey) return reject(new Error('未读取到 AMAP_JS_KEY'));
+    if (!cleanSecurityCode) return reject(new Error('未读取到 AMAP_SECURITY_CODE'));
+
+    // 高德要求安全密钥和异步回调都必须在 JS API 脚本加载之前声明。
+    window._AMapSecurityConfig = { securityJsCode: cleanSecurityCode };
+
+    const callbackName = `__nwmAmapReady_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const script = document.createElement('script');
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Scale,AMap.ToolBar,AMap.Geolocation`;
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('高德地图加载超时，请检查 Key 类型、域名白名单或网络连接'));
+    }, 20000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      try { delete window[callbackName]; } catch { window[callbackName] = undefined; }
+    }
+
+    window[callbackName] = () => {
+      cleanup();
+      if (window.AMap) resolve(window.AMap);
+      else reject(new Error('高德回调已执行，但 AMap 对象未生成'));
+    };
+
+    script.id = 'amap-jsapi';
+    script.charset = 'utf-8';
     script.async = true;
-    script.onload = () => window.AMap ? resolve(window.AMap) : reject(new Error('高德地图加载失败'));
-    script.onerror = () => reject(new Error('高德地图脚本无法访问'));
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(cleanKey)}&plugin=AMap.Scale&callback=${encodeURIComponent(callbackName)}`;
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('高德地图脚本无法访问；请检查 CSP、网络或高德服务状态'));
+    };
     document.head.appendChild(script);
   });
 }
@@ -453,9 +482,11 @@ async function initMap() {
     renderMarkers();
     setStatus(`${state.filtered.length} 个精选地点`, true);
   } catch (error) {
-    console.warn(error);
+    console.error('[AMap]', error);
     renderFallback();
-    setStatus('高德加载失败，已切换演示地图', false);
+    const reason = error instanceof Error ? error.message : '未知错误';
+    setStatus(`高德加载失败：${reason}`, false);
+    $('#mapStatus').title = reason;
   }
 }
 

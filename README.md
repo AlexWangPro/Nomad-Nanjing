@@ -98,7 +98,7 @@ APP_NAME_EN=Nanjing Work Map
 openssl rand -hex 32
 ```
 
-`AMAP_JS_KEY` 和 `AMAP_SECURITY_CODE` 未设置时，网站仍可运行，但显示的是演示地图，不是真实高德底图。
+`AMAP_JS_KEY` 和 `AMAP_SECURITY_CODE` 未设置时，网站仍可运行，但显示的是演示地图，不是真实高德底图。请直接粘贴值，不要把 `KEY=` 一起粘贴进值中，也不要额外添加引号。
 
 ### 5. 添加 Railway Volume
 
@@ -140,7 +140,8 @@ https://你的域名/admin
 3. 服务平台选择 **Web端（JS API）**；
 4. 获取 Key 和安全密钥；
 5. 把它们分别放入 `AMAP_JS_KEY` 与 `AMAP_SECURITY_CODE`；
-6. 配置正式域名白名单。
+6. 如高德控制台提供安全域名配置，请同时加入 Railway 生成的 `*.up.railway.app` 实际域名和后续绑定的自定义域名；
+7. 修改 Railway Variables 后确认服务已经完成重新部署。
 
 前端使用高德 `whitesmoke` 官方样式，以保持轻量、低饱和度的地图视觉。
 
@@ -216,3 +217,15 @@ https://你的域名/admin
     ├── styles.css
     └── favicon.svg
 ```
+
+
+## 高德加载故障排查
+
+页面会直接显示较具体的失败原因。优先检查：
+
+1. Key 的服务平台必须是 **Web端（JS API）**，不能使用“Web服务”Key；
+2. `AMAP_JS_KEY` 填 Key，`AMAP_SECURITY_CODE` 填同一个 Key 对应的安全密钥，二者不要填反；
+3. Railway Variables 中只填写值，不要写引号，不要把 `AMAP_JS_KEY=` 再复制到值中；
+4. 高德安全域名中加入正在访问的 Railway 域名和自定义域名；
+5. 保存变量后确认 Railway 已触发并完成一次新部署；
+6. 打开 `/api/config`，确认 `mapMode` 是 `amap`、`mapConfigReady` 是 `true`。不要把该页面截图公开，因为其中包含地图 Key。
