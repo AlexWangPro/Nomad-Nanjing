@@ -1,3 +1,5 @@
+import { mountLocationPicker } from './location-picker.js';
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -13,7 +15,10 @@ const state = {
   markers: new Map(),
   usingFallback: true,
   userPosition: null,
-  photoData: []
+  photoData: [],
+  amapDiagnostics: [],
+  submissionLocationPicker: null,
+  submissionStep: 1
 };
 
 const filters = [
@@ -29,13 +34,16 @@ const filters = [
   { id: 'verified', label: '已验证' }
 ];
 
-const categoryIcon = {
-  coffee: '☕',
-  library: '阅',
-  coworking: '工',
-  public: '公',
-  hotel: '宿'
-};
+function categoryIconHtml(category) {
+  const icons = {
+    coffee: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h11v5.5A4.5 4.5 0 0 1 11.5 18h-2A4.5 4.5 0 0 1 5 13.5V8Z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M7 5.5c0-1 1-1.2 1-2.2M11 5.5c0-1 1-1.2 1-2.2"/></svg>',
+    library: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5c2.8-.7 5-.2 7.5 1.5v12c-2.5-1.7-4.7-2.2-7.5-1.5v-12Z"/><path d="M19.5 5.5c-2.8-.7-5-.2-7.5 1.5v12c2.5-1.7 4.7-2.2 7.5-1.5v-12Z"/></svg>',
+    coworking: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2.8 19h18.4M9 16v3M15 16v3"/></svg>',
+    public: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M6 20v-7h12v7M8 13V9h8v4M10 9V5h4v4"/></svg>',
+    hotel: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19v-7h16v7M6 12V8.5A2.5 2.5 0 0 1 8.5 6h7A2.5 2.5 0 0 1 18 8.5V12M4 16h16M7 19v2M17 19v2"/></svg>'
+  };
+  return icons[category] || '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.8 7-12a7 7 0 1 0-14 0c0 6.2 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>';
+}
 
 const categoryLabel = {
   coffee: '咖啡馆',
@@ -120,7 +128,7 @@ function renderList() {
   list.innerHTML = state.filtered.map((place) => `
     <button class="place-card" type="button" data-place-id="${escapeHtml(place.id)}">
       <div class="place-card-top">
-        <span class="category-icon">${categoryIcon[place.category] || '地'}</span>
+        <span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
         <span class="place-card-copy">
           <h3>${escapeHtml(place.name)}</h3>
           <span class="place-meta">
@@ -139,8 +147,10 @@ function renderList() {
 }
 
 function markerHtml(place) {
-  return `<div class="map-marker ${place.featured ? 'featured' : ''} ${place.verified ? '' : 'unverified'}" data-marker-id="${escapeHtml(place.id)}">
-    <span class="map-marker-pin"></span><span class="map-marker-icon">${categoryIcon[place.category] || '地'}</span>
+  return `<div class="map-marker category-${escapeHtml(place.category)} ${place.featured ? 'featured' : ''} ${place.verified ? '' : 'unverified'}" data-marker-id="${escapeHtml(place.id)}">
+    <span class="map-marker-halo" aria-hidden="true"></span>
+    <span class="map-marker-pin"><span class="map-marker-icon">${categoryIconHtml(place.category)}</span></span>
+    <span class="map-marker-label">${escapeHtml(place.name)}</span>
   </div>`;
 }
 
@@ -210,6 +220,9 @@ function renderFallbackMarkers() {
 
 function highlightMarker(id) {
   $$('.map-marker.selected').forEach((item) => item.classList.remove('selected'));
+  $$('.place-card.selected').forEach((item) => item.classList.remove('selected'));
+  const activeCard = document.querySelector(`.place-card[data-place-id="${CSS.escape(id)}"]`);
+  activeCard?.classList.add('selected');
   const fallback = state.markers.get(id);
   if (state.usingFallback && fallback) $('.map-marker', fallback)?.classList.add('selected');
   if (!state.usingFallback) {
@@ -282,6 +295,7 @@ function closeDetail() {
   $('#detailSheet').setAttribute('aria-hidden', 'true');
   state.selected = null;
   $$('.map-marker.selected').forEach((item) => item.classList.remove('selected'));
+  $$('.place-card.selected').forEach((item) => item.classList.remove('selected'));
 }
 
 function toggleFavorite(id) {
@@ -301,7 +315,7 @@ function renderFavorites() {
   }
   list.innerHTML = items.map((place) => `
     <div class="favorite-item">
-      <span class="category-icon">${categoryIcon[place.category] || '地'}</span>
+      <span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
       <button type="button" data-favorite-place="${escapeHtml(place.id)}"><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.metroStation || place.address)}</small></button>
       <button class="icon-button" type="button" data-remove-favorite="${escapeHtml(place.id)}" aria-label="取消收藏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </div>
@@ -336,6 +350,69 @@ function openModal(id) {
   if (!dialog.open) dialog.showModal();
 }
 
+
+function setSubmissionStep(step) {
+  state.submissionStep = Math.max(1, Math.min(3, Number(step) || 1));
+  const stepFeedback = $('#submissionStepFeedback');
+  if (stepFeedback) { stepFeedback.textContent = ''; stepFeedback.className = 'form-feedback submission-step-feedback'; }
+  $$('[data-submit-step]').forEach((section) => section.classList.toggle('active', Number(section.dataset.submitStep) === state.submissionStep));
+  $$('[data-progress-step]').forEach((node) => {
+    const value = Number(node.dataset.progressStep);
+    node.classList.toggle('active', value === state.submissionStep);
+    node.classList.toggle('done', value < state.submissionStep);
+  });
+  if (state.submissionStep === 3) updateSubmissionSummary();
+  $('#submissionForm')?.scrollTo?.({ top: 0, behavior: 'smooth' });
+}
+
+function selectedText(name) {
+  const input = $(`#submissionForm [name="${name}"]:checked`);
+  return input?.closest('label')?.querySelector('span')?.textContent?.trim() || '';
+}
+
+function updateSubmissionSummary() {
+  const form = $('#submissionForm');
+  const node = $('#submissionSummary');
+  if (!form || !node) return;
+  const name = form.elements.placeName.value || '尚未选择地点';
+  const rows = [
+    ['地点', name],
+    ['总体结论', selectedText('overallSuitability')],
+    ['办公时长', selectedText('workDurationChoice')],
+    ['安静 / Wi-Fi', [selectedText('quietChoice'), selectedText('wifiChoice')].filter(Boolean).join(' · ')],
+    ['插座 / 通话', [selectedText('outletsChoice'), selectedText('callChoice')].filter(Boolean).join(' · ')]
+  ];
+  node.innerHTML = `<strong>提交摘要</strong>${rows.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value || '未回答')}</b></div>`).join('')}`;
+}
+
+function validateSubmissionStep(step) {
+  const form = $('#submissionForm');
+  const feedback = $('#submissionStepFeedback');
+  feedback.className = 'form-feedback submission-step-feedback';
+  feedback.textContent = '';
+  if (step === 1) {
+    if (!form.elements.email.checkValidity()) {
+      form.elements.email.reportValidity();
+      return false;
+    }
+    if (!form.elements.lng.value || !form.elements.lat.value || !form.elements.address.value || !form.elements.placeName.value) {
+      feedback.classList.add('error');
+      feedback.textContent = '请先搜索店名，并选择一个具体高德地点。';
+      return false;
+    }
+  }
+  if (step === 2) {
+    for (const name of ['visitRecency', 'workDurationChoice', 'overallSuitability']) {
+      if (!form.querySelector(`[name="${name}"]:checked`)) {
+        feedback.classList.add('error');
+        feedback.textContent = '请完成带 * 的快速选择。';
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 async function fileToDataUrl(file) {
   if (file.size > 2.5 * 1024 * 1024) throw new Error(`${file.name} 超过 2.5MB`);
   return await new Promise((resolve, reject) => {
@@ -359,6 +436,26 @@ async function handlePhotos(event) {
   }
 }
 
+async function ensurePublicLocationPicker() {
+  const root = $('#publicLocationPicker');
+  if (!root || state.submissionLocationPicker) {
+    state.submissionLocationPicker?.map?.resize?.();
+    return;
+  }
+  const status = $('[data-location-status]', root);
+  try {
+    state.submissionLocationPicker = await mountLocationPicker({
+      root,
+      amapKey: state.config?.amapKey,
+      initial: {},
+      city: '南京'
+    });
+  } catch (error) {
+    status.textContent = `位置选择器加载失败：${error.message}`;
+    throw error;
+  }
+}
+
 async function submitPlace(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -366,25 +463,21 @@ async function submitPlace(event) {
   const feedback = $('#submissionFeedback');
   feedback.className = 'form-feedback';
   feedback.textContent = '';
-  if (!state.photoData.length) {
-    feedback.classList.add('error');
-    feedback.textContent = '请至少上传一张现场图片。';
-    return;
-  }
+  if (!validateSubmissionStep(1) || !validateSubmissionStep(2)) return;
   const data = Object.fromEntries(new FormData(form).entries());
-  data.callFriendly = form.elements.callFriendly.checked;
-  data.unlimited = form.elements.unlimited.checked;
-  data.free = form.elements.free.checked;
+  data.actualWorked = data.actualWorked !== 'false';
   data.photos = state.photoData;
   button.disabled = true;
   button.textContent = '正在提交…';
   try {
-    await api('/api/submissions', { method: 'POST', body: JSON.stringify(data) });
+    const result = await api('/api/submissions', { method: 'POST', body: JSON.stringify(data) });
     feedback.classList.add('success');
-    feedback.textContent = '提交成功，已进入审核队列。';
+    feedback.textContent = result.message || '提交成功，已进入审核队列。';
     form.reset();
+    state.submissionLocationPicker?.reset?.();
     state.photoData = [];
     $('#photoPreview').innerHTML = '<span>点击选择图片</span>';
+    setSubmissionStep(1);
     setTimeout(() => $('#submitModal').close(), 1200);
   } catch (error) {
     feedback.classList.add('error');
@@ -418,86 +511,99 @@ function locateUser() {
   }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
 }
 
-function loadAmap(key, securityCode) {
+function isIpHostname(hostname) {
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname === 'localhost';
+}
+
+function recordAmapDiagnostic(message) {
+  const text = String(message || '').trim();
+  if (!text || state.amapDiagnostics.includes(text)) return;
+  state.amapDiagnostics.push(text);
+  console.warn('[AMap diagnostic]', text);
+}
+
+function waitForMapReady(map, timeoutMs = 12000) {
   return new Promise((resolve, reject) => {
-    if (window.AMap) return resolve(window.AMap);
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = window.setTimeout(() => {
+      const hasMapSurface = Boolean(document.querySelector('#map .amap-maps, #map canvas, #map .amap-layer'));
+      if (hasMapSurface) finish(resolve, true);
+      else finish(reject, new Error('高德 SDK 已初始化，但底图未完成渲染'));
+    }, timeoutMs);
 
-    const cleanKey = String(key || '').trim().replace(/^['"]|['"]$/g, '');
-    const cleanSecurityCode = String(securityCode || '').trim().replace(/^['"]|['"]$/g, '');
-    if (!cleanKey) return reject(new Error('未读取到 AMAP_JS_KEY'));
-    if (!cleanSecurityCode) return reject(new Error('未读取到 AMAP_SECURITY_CODE'));
+    try {
+      map.on('complete', () => finish(resolve, true));
+      requestAnimationFrame(() => {
+        try { map.resize(); } catch {}
+      });
+    } catch (error) {
+      finish(reject, error);
+    }
+  });
+}
 
-    // 高德要求安全密钥和异步回调都必须在 JS API 脚本加载之前声明。
-    window._AMapSecurityConfig = { securityJsCode: cleanSecurityCode };
-
-    const callbackName = `__nwmAmapReady_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const script = document.createElement('script');
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      reject(new Error('高德地图加载超时，请检查 Key 类型、域名白名单或网络连接'));
-    }, 20000);
-
-    function cleanup() {
-      window.clearTimeout(timeout);
-      try { delete window[callbackName]; } catch { window[callbackName] = undefined; }
+function loadExternalScript(src, id, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById(id);
+    if (existing) {
+      if (existing.dataset.loaded === 'true') return resolve();
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`${id} 加载失败`)), { once: true });
+      return;
     }
 
-    window[callbackName] = () => {
-      cleanup();
-      if (window.AMap) resolve(window.AMap);
-      else reject(new Error('高德回调已执行，但 AMap 对象未生成'));
-    };
+    const script = document.createElement('script');
+    const timer = window.setTimeout(() => {
+      script.remove();
+      reject(new Error(`${id} 加载超时`));
+    }, timeoutMs);
 
-    script.id = 'amap-jsapi';
+    script.id = id;
     script.charset = 'utf-8';
-    script.async = true;
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(cleanKey)}&callback=${encodeURIComponent(callbackName)}`;
+    script.src = src;
+    script.onload = () => {
+      window.clearTimeout(timer);
+      script.dataset.loaded = 'true';
+      resolve();
+    };
     script.onerror = () => {
-      cleanup();
-      reject(new Error('高德地图脚本无法访问；请检查 CSP、网络或高德服务状态'));
+      window.clearTimeout(timer);
+      script.remove();
+      reject(new Error(`${id} 无法访问`));
     };
     document.head.appendChild(script);
   });
 }
 
-function loadAmapPlugin(AMap, pluginName, timeoutMs = 10000) {
-  return new Promise((resolve, reject) => {
-    const constructorName = pluginName.split('.').pop();
-    if (typeof AMap?.[constructorName] === 'function') {
-      resolve(AMap[constructorName]);
-      return;
-    }
-    if (typeof AMap?.plugin !== 'function') {
-      reject(new Error(`${pluginName} 插件加载器不可用`));
-      return;
-    }
+async function loadAmap(key) {
+  if (window.AMap) return window.AMap;
 
-    let settled = false;
-    const timeout = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`${pluginName} 插件加载超时`));
-    }, timeoutMs);
+  const cleanKey = String(key || '').trim().replace(/^['"]|['"]$/g, '');
+  if (!cleanKey) throw new Error('未读取到 AMAP_JS_KEY');
 
-    try {
-      AMap.plugin(pluginName, () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        if (typeof AMap[constructorName] === 'function') {
-          resolve(AMap[constructorName]);
-        } else {
-          reject(new Error(`${pluginName} 插件已回调，但构造器不可用`));
-        }
-      });
-    } catch (error) {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      reject(error);
-    }
+  // 使用高德官方推荐的 Loader，并把安全密钥留在服务器端代理中。
+  window._AMapSecurityConfig = {
+    serviceHost: `${window.location.origin}/_AMapService`
+  };
+
+  await loadExternalScript('https://webapi.amap.com/loader.js', 'amap-loader');
+  if (!window.AMapLoader?.load) {
+    throw new Error('高德 Loader 已下载，但 AMapLoader 未生成');
+  }
+
+  return window.AMapLoader.load({
+    key: cleanKey,
+    version: '2.0',
+    plugins: []
   });
 }
+
 
 async function initMap() {
   if (!state.config?.amapKey) {
@@ -505,35 +611,47 @@ async function initMap() {
     setStatus('演示地图 · 添加高德 Key 后启用真实地图', false);
     return;
   }
+
   try {
-    const AMap = await loadAmap(state.config.amapKey, state.config.amapSecurityCode);
+    const AMap = await loadAmap(state.config.amapKey);
     $('#map').innerHTML = '';
-    state.map = new AMap.Map('map', {
+
+    const map = new AMap.Map('map', {
       center: [118.7969, 32.0603],
       zoom: 11.7,
-      mapStyle: 'amap://styles/whitesmoke',
+      zooms: [9, 18],
       viewMode: '2D',
+      mapStyle: 'amap://styles/whitesmoke',
+      features: ['bg', 'road', 'building', 'point'],
       showLabel: true,
-      resizeEnable: true
+      showIndoorMap: false,
+      resizeEnable: true,
+      animateEnable: true,
+      jogEnable: false
     });
+
+    state.map = map;
     state.usingFallback = false;
     renderMarkers();
-    setStatus(`${state.filtered.length} 个精选地点`, true);
 
-    // Scale 属于高德插件。必须等 AMap.plugin 回调后再实例化；
-    // 插件失败不应让整张地图退回演示模式。
-    try {
-      const Scale = await loadAmapPlugin(AMap, 'AMap.Scale');
-      state.map.addControl(new Scale());
-    } catch (pluginError) {
-      console.warn('[AMap.Scale]', pluginError);
-    }
+    await waitForMapReady(map);
+    setStatus(`${state.filtered.length} 个精选地点`, true);
   } catch (error) {
     console.error('[AMap]', error);
+    recordAmapDiagnostic(error instanceof Error ? error.message : error);
+    try { state.map?.destroy?.(); } catch {}
+    state.map = null;
     renderFallback();
     const reason = error instanceof Error ? error.message : '未知错误';
-    setStatus(`高德加载失败：${reason}`, false);
-    $('#mapStatus').title = reason;
+    let diagnosticText = '';
+    try {
+      const diagnostic = await api('/api/amap-check');
+      if (!diagnostic.ok) {
+        diagnosticText = ` · ${diagnostic.info || diagnostic.message || diagnostic.detail || '高德验证失败'}${diagnostic.infocode ? ` (${diagnostic.infocode})` : ''}`;
+      }
+    } catch {}
+    setStatus(`高德加载失败：${reason}${diagnosticText}`, false);
+    $('#mapStatus').title = `${reason}${diagnosticText}`;
   }
 }
 
@@ -565,11 +683,19 @@ function wireEvents() {
     renderFavorites();
     openModal('favoriteModal');
   });
-  $('#submitOpen').addEventListener('click', () => openModal('submitModal'));
+  $('#submitOpen').addEventListener('click', async () => {
+    setSubmissionStep(1);
+    openModal('submitModal');
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    try { await ensurePublicLocationPicker(); } catch (error) { showToast(error.message); }
+  });
   $('#detailClose').addEventListener('click', closeDetail);
   $('#locationButton').addEventListener('click', locateUser);
   $('#photoInput').addEventListener('change', handlePhotos);
   $('#submissionForm').addEventListener('submit', submitPlace);
+  $$('[data-submit-next]').forEach((button) => button.addEventListener('click', () => { if (validateSubmissionStep(state.submissionStep)) setSubmissionStep(state.submissionStep + 1); }));
+  $$('[data-submit-back]').forEach((button) => button.addEventListener('click', () => setSubmissionStep(state.submissionStep - 1)));
+  $('#submissionForm').addEventListener('change', () => { if (state.submissionStep === 3) updateSubmissionSummary(); });
   $$('[data-close-modal]').forEach((button) => button.addEventListener('click', () => document.getElementById(button.dataset.closeModal).close()));
   $$('.modal').forEach((dialog) => dialog.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
@@ -597,5 +723,18 @@ async function init() {
     setStatus('数据加载失败', false);
   }
 }
+
+window.addEventListener('error', (event) => {
+  const source = String(event.filename || '');
+  const message = String(event.message || '');
+  if (/amap|autonavi|高德/i.test(`${source} ${message}`)) {
+    recordAmapDiagnostic(message || source || '高德脚本错误');
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const message = event.reason?.message || String(event.reason || '');
+  if (/amap|autonavi|高德/i.test(message)) recordAmapDiagnostic(message);
+});
 
 init();

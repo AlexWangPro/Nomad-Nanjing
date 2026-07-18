@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#eef1ed" />
-  <meta name="description" content="南京办公地图审核与贡献者后台" />
-  <title>南京办公地图 · 管理后台</title>
+  <meta name="description" content="南京数字游民办公地图审核与贡献者后台" />
+  <title>南京数字游民办公地图 · 管理后台</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=2.0.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -15,7 +15,7 @@
       <div class="login-card">
         <div class="login-brand">
           <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
-          <div><h1>贡献者与管理后台</h1><p style="margin:5px 0 0">Nanjing Work Map Portal</p></div>
+          <div><h1>贡献者与管理后台</h1><p style="margin:5px 0 0">Nomad Nanjing Portal</p></div>
         </div>
         <p>管理员可审核地点、维护地图和邀请贡献者；受邀贡献者可以提交地点并查看自己的审核结果。</p>
         <form class="admin-form" id="loginForm">
@@ -32,7 +32,7 @@
       <header class="portal-topbar">
         <a class="portal-brand" href="/">
           <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
-          <strong>南京办公地图</strong>
+          <strong>南京数字游民办公地图</strong>
         </a>
         <div class="portal-user">
           <div class="portal-user-copy"><strong id="portalUserName">用户</strong><small id="portalUserRole">贡献者</small></div>
@@ -53,13 +53,14 @@
 
           <section class="portal-section" id="section-submissions" data-section="submissions">
             <div class="section-heading"><div><span class="eyebrow">MODERATION</span><h2>地点审核</h2><p>公开提交和贡献者提交都不会自动发布。</p></div>
-              <select id="submissionStatusFilter" style="min-height:40px;border:1px solid var(--line);border-radius:12px;padding:0 11px;background:#fff"><option value="all">全部状态</option><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select>
+              <select id="submissionStatusFilter" style="min-height:40px;border:1px solid var(--line);border-radius:12px;padding:0 11px;background:#fff"><option value="all">全部状态</option><option value="pending">待审核</option><option value="approved">已通过</option><option value="needs_info">需要补充</option><option value="secondary_review">待二次验证</option><option value="merged">已合并</option><option value="rejected">已拒绝</option></select>
             </div>
             <div class="admin-panel"><div class="admin-list" id="submissionList"></div></div>
           </section>
 
           <section class="portal-section" id="section-places" data-section="places">
-            <div class="section-heading"><div><span class="eyebrow">CURATED DATABASE</span><h2>地点管理</h2><p>示例数据可以编辑或下架，正式发布前请替换为真实地点。</p></div><button class="primary-button" id="newPlaceButton" type="button">新增地点</button></div>
+            <div class="section-heading"><div><span class="eyebrow">CURATED DATABASE</span><h2>地点管理</h2><p>先预录真实候选地点，再逐个补充办公条件并标记为已验证。</p></div><div class="heading-actions"><button class="secondary-button" id="importCandidatesButton" type="button">预录首批候选地点</button><button class="primary-button" id="newPlaceButton" type="button">新增地点</button></div></div>
+            <p class="form-feedback" id="candidateImportFeedback"></p>
             <div class="admin-panel"><div class="admin-list" id="placeAdminList"></div></div>
           </section>
 
@@ -82,25 +83,38 @@
           <section class="portal-section" id="section-contribute" data-section="contribute">
             <div class="section-heading"><div><span class="eyebrow">CONTRIBUTE</span><h2>提交新地点</h2><p>贡献者提交会标记为优先审核，但不会自动公开。</p></div></div>
             <div class="inline-form-card">
-              <form class="admin-form" id="portalSubmissionForm">
+              <form class="admin-form quick-contributor-form" id="portalSubmissionForm">
                 <div class="form-grid two-col">
-                  <label><span>地点名称 *</span><input name="placeName" required /></label>
-                  <label><span>类型 *</span><select name="category"><option value="coffee">咖啡馆</option><option value="library">图书馆 / 城市书房</option><option value="coworking">共享办公</option><option value="public">公共空间</option><option value="hotel">酒店大堂</option></select></label>
+                  <input name="placeName" type="hidden" required />
+                  <label><span>地点类型</span><select name="category"><option value="coffee">咖啡馆</option><option value="library">图书馆 / 城市书房</option><option value="coworking">共享办公</option><option value="public">公共空间</option><option value="hotel">酒店大堂</option></select></label>
+                  <label><span>总体结论 *</span><select name="overallSuitability" required><option value="excellent">非常适合办公</option><option value="good" selected>基本适合办公</option><option value="limited">只适合短暂停留</option><option value="unsuitable">不适合办公</option></select></label>
                 </div>
-                <label><span>地址 *</span><input name="address" required /></label>
+                <section class="location-picker compact" id="portalLocationPicker">
+                  <div class="location-picker-heading"><div><strong>输入店名并选择高德地点 *</strong><span>地址和位置自动填写，无需输入经纬度。</span></div></div>
+                  <div class="location-search-row"><input type="search" data-location-search placeholder="例如：星巴克德基广场" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
+                  <p class="location-status" data-location-status>输入店名会自动显示南京候选结果。</p>
+                  <div class="location-search-results" data-location-results hidden></div>
+                  <div class="location-picker-map" data-location-map></div>
+                  <div class="location-summary" data-location-summary></div>
+                  <input name="lng" type="hidden" required /><input name="lat" type="hidden" required /><input name="amapPoiId" type="hidden" /><input name="address" type="hidden" required /><input name="district" type="hidden" />
+                </section>
                 <div class="form-grid three-col">
-                  <label><span>区域</span><input name="district" /></label>
-                  <label><span>最近地铁站</span><input name="metroStation" /></label>
-                  <label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" /></label>
+                  <label><span>到访时间 *</span><select name="visitRecency" required><option value="today">今天</option><option value="week" selected>最近一周</option><option value="month">最近一个月</option><option value="older">更早</option></select></label>
+                  <label><span>办公时长 *</span><select name="workDurationChoice" required><option value="under30">少于 30 分钟</option><option value="30to60">30–60 分钟</option><option value="1to3" selected>1–3 小时</option><option value="over3">3 小时以上</option></select></label>
+                  <label><span>是否实际办公</span><select name="actualWorked"><option value="true" selected>是</option><option value="false">没有，只观察过</option></select></label>
                 </div>
-                <div class="form-grid two-col"><label><span>经度</span><input name="lng" type="number" step="0.000001" /></label><label><span>纬度</span><input name="lat" type="number" step="0.000001" /></label></div>
-                <div class="form-grid two-col"><label><span>到访日期 *</span><input name="visitDate" type="date" required /></label><label><span>办公时长 *</span><select name="workDuration" required><option value="">请选择</option><option>30–90 分钟</option><option>1.5–3 小时</option><option>超过 3 小时</option></select></label></div>
-                <div class="form-grid three-col"><label><span>安静程度</span><select name="quietLevel"><option value="5">非常安静</option><option value="4">较安静</option><option value="3" selected>一般</option><option value="2">较吵</option><option value="1">很吵</option></select></label><label><span>Wi-Fi</span><input name="wifi" /></label><label><span>插座</span><input name="outlets" /></label></div>
-                <div class="form-grid two-col"><label><span>营业时间</span><input name="hours" /></label><label><span>消费水平</span><input name="price" /></label></div>
-                <div class="check-row"><label class="check"><input name="callFriendly" type="checkbox" /><span>适合通话</span></label><label class="check"><input name="unlimited" type="checkbox" /><span>通常不限时</span></label><label class="check"><input name="free" type="checkbox" /><span>免费使用</span></label></div>
-                <label><span>实际办公体验 *（至少 40 字）</span><textarea name="description" minlength="40" maxlength="1600" rows="6" required></textarea></label>
-                <label><span>补充说明</span><textarea name="evidenceNote" maxlength="800" rows="3"></textarea></label>
-                <label><span>现场图片（贡献者首版可不上传，建议上传）</span><input id="portalPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label>
+                <div class="form-grid four-col quick-select-grid">
+                  <label><span>插座</span><select name="outletsChoice"><option value="unknown">不确定</option><option value="many">很多</option><option value="some">有一些</option><option value="few">很少</option><option value="none">没有</option></select></label>
+                  <label><span>Wi-Fi</span><select name="wifiChoice"><option value="untested">没测试</option><option value="stable">稳定好用</option><option value="average">一般</option><option value="unstable">不稳定</option><option value="none">没有</option></select></label>
+                  <label><span>安静程度</span><select name="quietChoice"><option value="unknown">不确定</option><option value="silent">很安静</option><option value="quiet">比较安静</option><option value="noisy">有些嘈杂</option><option value="loud">很吵</option></select></label>
+                  <label><span>电话 / 视频会议</span><select name="callChoice"><option value="unknown">不确定</option><option value="suitable">适合</option><option value="quiet_only">小声可以</option><option value="unsuitable">不太适合</option><option value="forbidden">不允许</option></select></label>
+                  <label><span>停留时长</span><select name="longStayChoice"><option value="unknown">不确定</option><option value="over3">3 小时以上</option><option value="1to3">1–3 小时</option><option value="short">短暂停留</option></select></label>
+                  <label><span>消费</span><select name="priceChoice"><option value="unknown">不确定</option><option value="free">免费</option><option value="under30">¥1–30</option><option value="31to50">¥31–50</option><option value="51to100">¥51–100</option><option value="over100">¥100+</option></select></label>
+                  <label><span>座位</span><select name="seatingChoice"><option value="unknown">不确定</option><option value="ample">座位充足</option><option value="available">通常能找到</option><option value="crowded">经常满座</option></select></label>
+                  <label><span>拥挤情况</span><select name="crowdChoice"><option value="unknown">不确定</option><option value="relaxed">通常不拥挤</option><option value="peak_only">高峰拥挤</option><option value="crowded">经常拥挤</option></select></label>
+                </div>
+                <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="4" placeholder="只写地图和选项没有覆盖的内容。"></textarea></label>
+                <label><span>现场图片（选填）</span><input id="portalPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label>
                 <div id="portalPhotoPreview" class="photo-preview"><span>暂未选择图片</span></div>
                 <input name="website" class="honeypot" tabindex="-1" autocomplete="off" />
                 <div class="form-actions-inline"><button class="primary-button" id="portalSubmitButton" type="submit">提交审核</button></div>
@@ -117,6 +131,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js"></script>
+  <script type="module" src="/admin.js?v=2.0.0"></script>
 </body>
 </html>

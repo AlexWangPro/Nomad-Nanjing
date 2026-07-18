@@ -1,14 +1,14 @@
 {
-  "name": "nanjing-work-map",
-  "version": "1.0.2",
+  "name": "nomad-nanjing",
+  "version": "2.1.0",
   "private": true,
-  "description": "A curated map of laptop-friendly places in Nanjing, with moderated submissions.",
+  "description": "Nomad Nanjing Railway edition: a curated, moderated map of laptop-friendly workspaces in Nanjing.",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/admin.js"
+    "check": "node --check server.js && node --check public/app.js && node --check public/admin.js && node --check public/location-picker.js"
   }
 }

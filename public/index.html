@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f5f5ef" />
+  <meta name="theme-color" content="#e9eee9" />
   <meta name="description" content="南京适合电脑办公、远程工作与数字游民使用的精选地点地图。" />
-  <title>南京办公地图</title>
+  <title>南京数字游民办公地图</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=2.0.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -17,8 +17,8 @@
           <svg viewBox="0 0 40 40" role="img"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg>
         </span>
         <span class="brand-copy">
-          <strong id="appName">南京办公地图</strong>
-          <small id="appNameEn">Nanjing Work Map</small>
+          <strong id="appName">南京数字游民办公地图</strong>
+          <small id="appNameEn">Nomad Nanjing</small>
         </span>
       </button>
       <div class="topbar-actions">
@@ -79,81 +79,88 @@
   </div>
 
   <dialog class="modal" id="submitModal">
-    <form class="modal-card submission-form" id="submissionForm" method="dialog">
+    <form class="modal-card submission-form quick-submission" id="submissionForm" method="dialog">
       <div class="modal-header">
         <div>
-          <span class="eyebrow">COMMUNITY SUBMISSION</span>
-          <h2>推荐一个真实适合办公的地点</h2>
+          <span class="eyebrow">60-SECOND SUBMISSION</span>
+          <h2>快速推荐办公地点</h2>
         </div>
         <button class="icon-button modal-close" type="button" data-close-modal="submitModal" aria-label="关闭">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
         </button>
       </div>
-      <p class="form-note">提交不会立即公开。请基于真实到访经历填写，并上传至少一张现场图片。</p>
-      <div class="form-grid two-col">
-        <label><span>你的称呼</span><input name="name" maxlength="80" placeholder="例如 Alex" /></label>
-        <label><span>联系邮箱 *</span><input name="email" type="email" required placeholder="用于通知审核结果" /></label>
+      <div class="submission-progress" aria-label="提交进度">
+        <span class="active" data-progress-step="1">1 <small>地点</small></span>
+        <span data-progress-step="2">2 <small>快速选择</small></span>
+        <span data-progress-step="3">3 <small>可选补充</small></span>
       </div>
-      <div class="form-grid two-col">
-        <label><span>地点名称 *</span><input name="placeName" required maxlength="120" /></label>
-        <label><span>地点类型 *</span>
-          <select name="category" required>
-            <option value="coffee">咖啡馆</option>
-            <option value="library">图书馆 / 城市书房</option>
-            <option value="coworking">共享办公</option>
-            <option value="public">公共空间</option>
-            <option value="hotel">酒店大堂</option>
-          </select>
-        </label>
-      </div>
-      <label><span>详细地址 *</span><input name="address" required maxlength="240" placeholder="请写到楼层或入口" /></label>
-      <div class="form-grid three-col">
-        <label><span>区域</span><input name="district" maxlength="60" placeholder="秦淮区" /></label>
-        <label><span>最近地铁站</span><input name="metroStation" maxlength="80" /></label>
-        <label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" /></label>
-      </div>
-      <div class="form-grid two-col">
-        <label><span>经度（可后补）</span><input name="lng" type="number" step="0.000001" placeholder="118.778900" /></label>
-        <label><span>纬度（可后补）</span><input name="lat" type="number" step="0.000001" placeholder="32.041500" /></label>
-      </div>
-      <div class="form-grid two-col">
-        <label><span>实际到访日期 *</span><input name="visitDate" type="date" required /></label>
-        <label><span>实际办公时长 *</span>
-          <select name="workDuration" required>
-            <option value="">请选择</option>
-            <option>30–90 分钟</option>
-            <option>1.5–3 小时</option>
-            <option>超过 3 小时</option>
-          </select>
-        </label>
-      </div>
-      <div class="form-grid three-col">
-        <label><span>安静程度</span><select name="quietLevel"><option value="5">非常安静</option><option value="4">较安静</option><option value="3" selected>一般</option><option value="2">较吵</option><option value="1">很吵</option></select></label>
-        <label><span>Wi-Fi</span><input name="wifi" maxlength="60" placeholder="稳定 / 需登录" /></label>
-        <label><span>插座</span><input name="outlets" maxlength="80" placeholder="充足 / 部分座位" /></label>
-      </div>
-      <div class="form-grid two-col">
-        <label><span>营业时间</span><input name="hours" maxlength="80" placeholder="09:00–22:00" /></label>
-        <label><span>消费水平</span><input name="price" maxlength="60" placeholder="¥30–50 / 免费" /></label>
-      </div>
-      <div class="check-row">
-        <label class="check"><input name="callFriendly" type="checkbox" /><span>适合电话或视频会议</span></label>
-        <label class="check"><input name="unlimited" type="checkbox" /><span>通常不限时</span></label>
-        <label class="check"><input name="free" type="checkbox" /><span>可以免费使用</span></label>
-      </div>
-      <label><span>你的实际办公体验 *（至少 40 字）</span><textarea name="description" required minlength="40" maxlength="1600" rows="5" placeholder="桌面大小、拥挤时段、是否容易找到插座、工作人员是否介意使用电脑……"></textarea></label>
-      <label><span>补充证据或注意事项</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：当天拍摄、店员确认不限时、周末规则可能不同。"></textarea></label>
-      <label class="upload-field">
-        <span>现场图片 *（1–3 张，每张不超过 2.5MB）</span>
-        <input id="photoInput" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required />
-        <div class="photo-preview" id="photoPreview"><span>点击选择图片</span></div>
-      </label>
-      <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
-      <div class="modal-actions">
-        <button class="secondary-button" type="button" data-close-modal="submitModal">取消</button>
-        <button class="primary-button" id="submitButton" type="submit">提交审核</button>
-      </div>
-      <p class="form-feedback" id="submissionFeedback" role="status"></p>
+      <p class="form-feedback submission-step-feedback" id="submissionStepFeedback" role="status"></p>
+
+      <section class="submission-step active" data-submit-step="1">
+        <p class="form-note">输入店名并选择高德结果。地址和位置会自动填写，不需要输入经纬度。</p>
+        <div class="form-grid two-col">
+          <label><span>联系邮箱 *</span><input name="email" type="email" required placeholder="用于通知审核结果" /></label>
+          <label><span>你的称呼（选填）</span><input name="name" maxlength="80" placeholder="例如 Alex" /></label>
+        </div>
+        <fieldset class="choice-section compact-choice"><legend>地点类型 *</legend>
+          <div class="choice-pills five">
+            <label><input type="radio" name="category" value="coffee" checked /><span>咖啡馆</span></label>
+            <label><input type="radio" name="category" value="library" /><span>图书馆</span></label>
+            <label><input type="radio" name="category" value="coworking" /><span>共享办公</span></label>
+            <label><input type="radio" name="category" value="public" /><span>公共空间</span></label>
+            <label><input type="radio" name="category" value="hotel" /><span>酒店大堂</span></label>
+          </div>
+        </fieldset>
+        <input name="placeName" type="hidden" required />
+        <section class="location-picker" id="publicLocationPicker">
+          <div class="location-picker-heading"><div><strong>搜索店名并确认位置 *</strong><span>例如：星巴克德基广场、南京图书馆、先锋书店。</span></div></div>
+          <div class="location-search-row">
+            <input type="search" data-location-search placeholder="只需输入店名" autocomplete="off" />
+            <button class="secondary-button" type="button" data-location-search-button>搜索</button>
+          </div>
+          <p class="location-status" data-location-status>输入两个字以上会自动显示南京高德候选结果。</p>
+          <div class="location-search-results" data-location-results hidden></div>
+          <div class="location-picker-map" data-location-map aria-label="选择地点位置"></div>
+          <div class="location-summary" data-location-summary></div>
+          <input name="lng" type="hidden" required />
+          <input name="lat" type="hidden" required />
+          <input name="amapPoiId" type="hidden" />
+          <input name="address" type="hidden" required />
+          <input name="district" type="hidden" />
+        </section>
+        <div class="modal-actions"><button class="secondary-button" type="button" data-close-modal="submitModal">取消</button><button class="primary-button" type="button" data-submit-next>下一步</button></div>
+      </section>
+
+      <section class="submission-step" data-submit-step="2">
+        <p class="form-note">全部是点击选择；不确定可以直接选“不确定”。</p>
+        <div class="quick-question-grid">
+          <fieldset class="choice-section"><legend>你实际用电脑工作过吗？ *</legend><div class="choice-pills two"><label><input type="radio" name="actualWorked" value="true" checked /><span>是，实际工作过</span></label><label><input type="radio" name="actualWorked" value="false" /><span>没有，只观察过</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>什么时候到访？ *</legend><div class="choice-pills four"><label><input type="radio" name="visitRecency" value="today" /><span>今天</span></label><label><input type="radio" name="visitRecency" value="week" checked /><span>最近一周</span></label><label><input type="radio" name="visitRecency" value="month" /><span>最近一个月</span></label><label><input type="radio" name="visitRecency" value="older" /><span>更早</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>实际办公时长 *</legend><div class="choice-pills four"><label><input type="radio" name="workDurationChoice" value="under30" /><span>&lt; 30 分钟</span></label><label><input type="radio" name="workDurationChoice" value="30to60" /><span>30–60 分钟</span></label><label><input type="radio" name="workDurationChoice" value="1to3" checked /><span>1–3 小时</span></label><label><input type="radio" name="workDurationChoice" value="over3" /><span>3 小时以上</span></label></div></fieldset>
+          <fieldset class="choice-section highlight-choice"><legend>总体结论 *</legend><div class="choice-pills four"><label><input type="radio" name="overallSuitability" value="excellent" /><span>非常适合</span></label><label><input type="radio" name="overallSuitability" value="good" checked /><span>基本适合</span></label><label><input type="radio" name="overallSuitability" value="limited" /><span>短时可用</span></label><label><input type="radio" name="overallSuitability" value="unsuitable" /><span>不适合</span></label></div></fieldset>
+
+          <fieldset class="choice-section"><legend>插座</legend><div class="choice-pills five"><label><input type="radio" name="outletsChoice" value="many" /><span>很多</span></label><label><input type="radio" name="outletsChoice" value="some" /><span>有一些</span></label><label><input type="radio" name="outletsChoice" value="few" /><span>很少</span></label><label><input type="radio" name="outletsChoice" value="none" /><span>没有</span></label><label><input type="radio" name="outletsChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>Wi-Fi</legend><div class="choice-pills five"><label><input type="radio" name="wifiChoice" value="stable" /><span>稳定好用</span></label><label><input type="radio" name="wifiChoice" value="average" /><span>一般</span></label><label><input type="radio" name="wifiChoice" value="unstable" /><span>不稳定</span></label><label><input type="radio" name="wifiChoice" value="none" /><span>没有</span></label><label><input type="radio" name="wifiChoice" value="untested" checked /><span>没测试</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>安静程度</legend><div class="choice-pills five"><label><input type="radio" name="quietChoice" value="silent" /><span>很安静</span></label><label><input type="radio" name="quietChoice" value="quiet" /><span>比较安静</span></label><label><input type="radio" name="quietChoice" value="noisy" /><span>有些嘈杂</span></label><label><input type="radio" name="quietChoice" value="loud" /><span>很吵</span></label><label><input type="radio" name="quietChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>电话 / 视频会议</legend><div class="choice-pills five"><label><input type="radio" name="callChoice" value="suitable" /><span>适合</span></label><label><input type="radio" name="callChoice" value="quiet_only" /><span>小声可以</span></label><label><input type="radio" name="callChoice" value="unsuitable" /><span>不太适合</span></label><label><input type="radio" name="callChoice" value="forbidden" /><span>不允许</span></label><label><input type="radio" name="callChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>适合停留多久</legend><div class="choice-pills four"><label><input type="radio" name="longStayChoice" value="over3" /><span>3 小时以上</span></label><label><input type="radio" name="longStayChoice" value="1to3" /><span>1–3 小时</span></label><label><input type="radio" name="longStayChoice" value="short" /><span>短暂停留</span></label><label><input type="radio" name="longStayChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>消费水平</legend><div class="choice-pills six"><label><input type="radio" name="priceChoice" value="free" /><span>免费</span></label><label><input type="radio" name="priceChoice" value="under30" /><span>¥1–30</span></label><label><input type="radio" name="priceChoice" value="31to50" /><span>¥31–50</span></label><label><input type="radio" name="priceChoice" value="51to100" /><span>¥51–100</span></label><label><input type="radio" name="priceChoice" value="over100" /><span>¥100+</span></label><label><input type="radio" name="priceChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>座位情况</legend><div class="choice-pills four"><label><input type="radio" name="seatingChoice" value="ample" /><span>座位充足</span></label><label><input type="radio" name="seatingChoice" value="available" /><span>通常能找到</span></label><label><input type="radio" name="seatingChoice" value="crowded" /><span>经常满座</span></label><label><input type="radio" name="seatingChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+          <fieldset class="choice-section"><legend>拥挤情况</legend><div class="choice-pills four"><label><input type="radio" name="crowdChoice" value="relaxed" /><span>通常不拥挤</span></label><label><input type="radio" name="crowdChoice" value="peak_only" /><span>高峰拥挤</span></label><label><input type="radio" name="crowdChoice" value="crowded" /><span>经常拥挤</span></label><label><input type="radio" name="crowdChoice" value="unknown" checked /><span>不确定</span></label></div></fieldset>
+        </div>
+        <div class="modal-actions"><button class="secondary-button" type="button" data-submit-back>上一步</button><button class="primary-button" type="button" data-submit-next>下一步</button></div>
+      </section>
+
+      <section class="submission-step" data-submit-step="3">
+        <p class="form-note">下面全部选填。直接提交也可以；照片和感受会帮助管理员更快通过。</p>
+        <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="5" placeholder="例如：二楼靠窗更安静、周末下午常满座、插座集中在靠墙位置。"></textarea></label>
+        <label><span>其他注意事项（选填）</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：店员确认可以长时间使用电脑。"></textarea></label>
+        <label class="upload-field"><span>现场图片（选填，最多 3 张）</span><input id="photoInput" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><div class="photo-preview" id="photoPreview"><span>点击选择图片</span></div></label>
+        <div class="submission-summary" id="submissionSummary"></div>
+        <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+        <div class="modal-actions"><button class="secondary-button" type="button" data-submit-back>上一步</button><button class="primary-button" id="submitButton" type="submit">提交审核</button></div>
+        <p class="form-feedback" id="submissionFeedback" role="status"></p>
+      </section>
     </form>
   </dialog>
 
@@ -193,6 +200,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=2.0.0"></script>
 </body>
 </html>

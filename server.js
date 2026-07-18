@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const APP_VERSION = '2.1.0';
 const PORT = Number(process.env.PORT || 3000);
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
+const DATA_DIR = path.resolve(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'));
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -26,6 +27,236 @@ const categoryLabels = {
   public: '公共空间',
   hotel: '酒店大堂'
 };
+
+
+const submissionOptionLabels = {
+  visitRecency: {
+    today: '今天',
+    week: '最近一周',
+    month: '最近一个月',
+    older: '一个月以前'
+  },
+  workDuration: {
+    under30: '少于 30 分钟',
+    '30to60': '30–60 分钟',
+    '1to3': '1–3 小时',
+    over3: '3 小时以上',
+    observed: '没有办公，只观察过'
+  },
+  overallSuitability: {
+    excellent: '非常适合办公',
+    good: '基本适合办公',
+    limited: '只适合短暂停留',
+    unsuitable: '不适合办公'
+  },
+  outletsChoice: {
+    many: '很多',
+    some: '有一些',
+    few: '很少',
+    none: '没有',
+    unknown: '不确定'
+  },
+  wifiChoice: {
+    stable: '稳定好用',
+    average: '一般',
+    unstable: '不稳定',
+    none: '没有',
+    untested: '没测试'
+  },
+  quietChoice: {
+    silent: '很安静',
+    quiet: '比较安静',
+    noisy: '有些嘈杂',
+    loud: '很吵',
+    unknown: '不确定'
+  },
+  callChoice: {
+    suitable: '适合电话或视频会议',
+    quiet_only: '小声通话可以',
+    unsuitable: '不太适合',
+    forbidden: '明确不允许',
+    unknown: '不确定'
+  },
+  longStayChoice: {
+    over3: '适合 3 小时以上',
+    '1to3': '适合 1–3 小时',
+    short: '只适合短暂停留',
+    unknown: '不确定'
+  },
+  priceChoice: {
+    free: '免费',
+    under30: '¥1–30',
+    '31to50': '¥31–50',
+    '51to100': '¥51–100',
+    over100: '¥100 以上',
+    unknown: '不确定'
+  },
+  seatingChoice: {
+    ample: '座位充足',
+    available: '通常能找到',
+    crowded: '经常满座',
+    unknown: '不确定'
+  },
+  crowdChoice: {
+    relaxed: '通常不拥挤',
+    peak_only: '高峰时拥挤',
+    crowded: '经常拥挤',
+    unknown: '不确定'
+  }
+};
+
+function enumChoice(group, value, fallback = 'unknown') {
+  const clean = cleanString(value, 40);
+  return submissionOptionLabels[group]?.[clean] ? clean : fallback;
+}
+
+function optionLabel(group, value, fallback = '未回答') {
+  return submissionOptionLabels[group]?.[value] || fallback;
+}
+
+function normalizedPlaceName(value) {
+  return cleanString(value, 160)
+    .toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/南京|门店|店|分店|旗舰店|咖啡|coffee|空间|中心/g, '')
+    .replace(/[\s·•,，.。\-—_\/\\]/g, '');
+}
+
+function distanceMeters(aLng, aLat, bLng, bLat) {
+  const toRad = (n) => n * Math.PI / 180;
+  const radius = 6371000;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(radius * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
+}
+
+function findDuplicatePlaces(submission, db) {
+  const targetName = normalizedPlaceName(submission.name);
+  return (db.places || [])
+    .filter((place) => !place.archived)
+    .map((place) => {
+      const samePoi = Boolean(submission.amapPoiId && place.amapPoiId && submission.amapPoiId === place.amapPoiId);
+      const distance = Number.isFinite(submission.lng) && Number.isFinite(submission.lat) && Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat))
+        ? distanceMeters(submission.lng, submission.lat, Number(place.lng), Number(place.lat))
+        : 999999;
+      const candidateName = normalizedPlaceName(place.name);
+      const similarName = Boolean(targetName && candidateName && (targetName.includes(candidateName) || candidateName.includes(targetName)));
+      const likely = samePoi || distance <= 45 || (distance <= 120 && similarName);
+      return likely ? {
+        id: place.id,
+        name: place.name,
+        address: place.address,
+        distanceMeters: distance,
+        reason: samePoi ? '同一高德地点' : distance <= 45 ? '位置非常接近' : '名称相似且位置接近'
+      } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)
+    .slice(0, 5);
+}
+
+function suggestedTagsFromSubmission(submission) {
+  const tags = [];
+  if (['silent', 'quiet'].includes(submission.quietChoice)) tags.push('适合深度工作');
+  if (submission.outletsChoice === 'many') tags.push('插座充足');
+  else if (submission.outletsChoice === 'some') tags.push('有插座');
+  if (submission.wifiChoice === 'stable') tags.push('Wi-Fi 稳定');
+  if (submission.callChoice === 'suitable') tags.push('适合视频会议');
+  else if (submission.callChoice === 'quiet_only') tags.push('可小声通话');
+  if (submission.longStayChoice === 'over3') tags.push('适合长时间办公');
+  if (submission.priceChoice === 'free') tags.push('免费办公');
+  if (submission.seatingChoice === 'ample') tags.push('座位充足');
+  if (['peak_only', 'crowded'].includes(submission.crowdChoice)) tags.push('高峰拥挤');
+  if (submission.overallSuitability === 'limited') tags.push('适合短时办公');
+  return [...new Set(tags)].slice(0, 8);
+}
+
+function calculateSubmissionConfidence(submission) {
+  let score = submission.submitterType === 'contributor' ? 35 : 20;
+  if (submission.actualWorked) score += 18;
+  if (['1to3', 'over3'].includes(submission.workDurationChoice)) score += 12;
+  else if (submission.workDurationChoice === '30to60') score += 7;
+  if (['today', 'week'].includes(submission.visitRecency)) score += 12;
+  else if (submission.visitRecency === 'month') score += 7;
+  if (submission.images.length) score += 12;
+  const answered = ['outletsChoice', 'wifiChoice', 'quietChoice', 'callChoice', 'longStayChoice', 'priceChoice', 'seatingChoice', 'crowdChoice']
+    .filter((key) => !['unknown', 'untested'].includes(submission[key])).length;
+  score += Math.min(16, answered * 2);
+  if (submission.experienceNote.length >= 30) score += 5;
+  score = Math.min(100, score);
+  return {
+    score,
+    label: score >= 75 ? '可信度较高' : score >= 50 ? '信息基本完整' : '需要进一步确认'
+  };
+}
+
+function generatedSubmissionDescription(submission) {
+  const parts = [
+    optionLabel('overallSuitability', submission.overallSuitability),
+    optionLabel('workDuration', submission.workDurationChoice),
+    optionLabel('quietChoice', submission.quietChoice),
+    optionLabel('wifiChoice', submission.wifiChoice),
+    optionLabel('outletsChoice', submission.outletsChoice),
+    optionLabel('callChoice', submission.callChoice),
+    optionLabel('longStayChoice', submission.longStayChoice),
+    optionLabel('priceChoice', submission.priceChoice),
+    optionLabel('seatingChoice', submission.seatingChoice)
+  ].filter((value) => value && value !== '未回答' && value !== '不确定' && value !== '没测试');
+  return submission.experienceNote || parts.join(' · ') || '用户提交了该地点的办公体验，详细条件待管理员确认。';
+}
+
+
+const candidatePlaceSearches = [
+  { query: '南京图书馆', category: 'library' },
+  { query: '金陵图书馆', category: 'library' },
+  { query: '南京市少年儿童图书馆', category: 'library' },
+  { query: '玄武区图书馆', category: 'library' },
+  { query: '秦淮区图书馆', category: 'library' },
+  { query: '建邺区图书馆', category: 'library' },
+  { query: '鼓楼区图书馆 南京', category: 'library' },
+  { query: '栖霞区图书馆', category: 'library' },
+  { query: '雨花台区图书馆', category: 'library' },
+  { query: '江宁区图书馆', category: 'library' },
+  { query: '浦口区图书馆', category: 'library' },
+  { query: '六合区图书馆', category: 'library' },
+  { query: '溧水区图书馆', category: 'library' },
+  { query: '高淳区图书馆', category: 'library' },
+  { query: '江北新区图书馆', category: 'library' },
+  { query: '先锋书店 五台山', category: 'public' },
+  { query: '先锋书店 颐和书馆', category: 'public' },
+  { query: '大众书局 南京书城', category: 'public' },
+  { query: '金陵书苑', category: 'public' },
+  { query: '南京城市书房', category: 'library' },
+  { query: '星巴克 新街口 南京', category: 'coffee' },
+  { query: '星巴克 德基广场', category: 'coffee' },
+  { query: '星巴克 南京1912', category: 'coffee' },
+  { query: '星巴克 大行宫 南京', category: 'coffee' },
+  { query: '星巴克 鼓楼 南京', category: 'coffee' },
+  { query: '星巴克 紫峰 南京', category: 'coffee' },
+  { query: '星巴克 金鹰世界 南京', category: 'coffee' },
+  { query: '星巴克 南京国际金融中心', category: 'coffee' },
+  { query: '星巴克 华采天地 南京', category: 'coffee' },
+  { query: '星巴克 奥体 南京', category: 'coffee' },
+  { query: '星巴克 南京南站', category: 'coffee' },
+  { query: '星巴克 景枫中心', category: 'coffee' },
+  { query: '星巴克 百家湖 南京', category: 'coffee' },
+  { query: '星巴克 仙林金鹰', category: 'coffee' },
+  { query: '星巴克 南京万象天地', category: 'coffee' },
+  { query: '星巴克 环宇城 南京', category: 'coffee' },
+  { query: '星巴克 河西天街 南京', category: 'coffee' },
+  { query: '星巴克 江北新区 南京', category: 'coffee' },
+  { query: 'MANNER咖啡 新街口 南京', category: 'coffee' },
+  { query: 'MANNER咖啡 南京国际金融中心', category: 'coffee' },
+  { query: '共享办公 新街口 南京', category: 'coworking' },
+  { query: '共享办公 河西 南京', category: 'coworking' },
+  { query: '共享办公 南京国际金融中心', category: 'coworking' },
+  { query: '共享办公 软件谷 南京', category: 'coworking' },
+  { query: '共享办公 江宁 南京', category: 'coworking' },
+  { query: '共享办公 江北新区 南京', category: 'coworking' },
+  { query: '金陵饭店 南京', category: 'hotel' },
+  { query: '南京香格里拉大酒店', category: 'hotel' }
+];
 
 const seedPlaces = [
   {
@@ -256,11 +487,12 @@ const seedPlaces = [
 
 function defaultDb() {
   return {
-    version: 1,
+    version: 2,
     places: seedPlaces,
     submissions: [],
     contributors: [],
     auditLog: [],
+    meta: {},
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -430,9 +662,11 @@ function saveImage(dataUrl) {
   return `/uploads/${filename}`;
 }
 
-function normalizeSubmission(body, user = null) {
+function normalizeSubmission(body, user = null, db = { places: [] }) {
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 3) : [];
   const savedPhotos = photos.map(saveImage).filter(Boolean);
+  const actualWorked = body.actualWorked === false || body.actualWorked === 'false' ? false : true;
+  const quietChoice = enumChoice('quietChoice', body.quietChoice || ({ 5: 'silent', 4: 'quiet', 3: 'unknown', 2: 'noisy', 1: 'loud' }[String(body.quietLevel)]));
   const submission = {
     id: id('sub'),
     status: 'pending',
@@ -445,19 +679,21 @@ function normalizeSubmission(body, user = null) {
     district: cleanString(body.district, 60),
     lng: numberInRange(body.lng, 118.3, 119.4),
     lat: numberInRange(body.lat, 31.5, 32.6),
-    metroStation: cleanString(body.metroStation, 80),
-    metroMinutes: numberInRange(body.metroMinutes, 0, 90),
+    amapPoiId: cleanString(body.amapPoiId, 80),
+    actualWorked,
+    visitRecency: enumChoice('visitRecency', body.visitRecency, 'month'),
     visitDate: cleanString(body.visitDate, 20),
-    workDuration: cleanString(body.workDuration, 60),
-    quietLevel: numberInRange(body.quietLevel, 1, 5, 3),
-    wifi: cleanString(body.wifi, 60),
-    outlets: cleanString(body.outlets, 80),
-    price: cleanString(body.price, 60),
-    hours: cleanString(body.hours, 80),
-    callFriendly: bool(body.callFriendly),
-    unlimited: bool(body.unlimited),
-    free: bool(body.free),
-    description: cleanString(body.description, 1600),
+    workDurationChoice: actualWorked ? enumChoice('workDuration', body.workDurationChoice || body.workDuration, '30to60') : 'observed',
+    overallSuitability: enumChoice('overallSuitability', body.overallSuitability, 'good'),
+    outletsChoice: enumChoice('outletsChoice', body.outletsChoice),
+    wifiChoice: enumChoice('wifiChoice', body.wifiChoice),
+    quietChoice,
+    callChoice: enumChoice('callChoice', body.callChoice),
+    longStayChoice: enumChoice('longStayChoice', body.longStayChoice),
+    priceChoice: enumChoice('priceChoice', body.priceChoice),
+    seatingChoice: enumChoice('seatingChoice', body.seatingChoice),
+    crowdChoice: enumChoice('crowdChoice', body.crowdChoice),
+    experienceNote: cleanString(body.experienceNote || body.description, 1600),
     evidenceNote: cleanString(body.evidenceNote, 800),
     images: savedPhotos,
     reviewNote: '',
@@ -465,14 +701,27 @@ function normalizeSubmission(body, user = null) {
     updatedAt: new Date().toISOString()
   };
 
+  submission.workDuration = optionLabel('workDuration', submission.workDurationChoice);
+  submission.quietLevel = { silent: 5, quiet: 4, unknown: 3, noisy: 2, loud: 1 }[submission.quietChoice] || 3;
+  submission.wifi = optionLabel('wifiChoice', submission.wifiChoice, '待确认');
+  submission.outlets = optionLabel('outletsChoice', submission.outletsChoice, '待确认');
+  submission.price = optionLabel('priceChoice', submission.priceChoice, '待确认');
+  submission.callFriendly = submission.callChoice === 'suitable' || submission.callChoice === 'quiet_only';
+  submission.unlimited = submission.longStayChoice === 'over3';
+  submission.free = submission.priceChoice === 'free';
+  submission.description = generatedSubmissionDescription(submission);
+  submission.suggestedTags = suggestedTagsFromSubmission(submission);
+  submission.confidence = calculateSubmissionConfidence(submission);
+  submission.duplicateMatches = findDuplicatePlaces(submission, db);
+
   const errors = [];
   if (!submission.name) errors.push('地点名称');
-  if (!submission.address) errors.push('详细地址');
+  if (!submission.address) errors.push('地图识别地址');
+  if (submission.lng === null || submission.lat === null) errors.push('通过地图确认的精确位置');
   if (!submission.submitterEmail) errors.push('有效邮箱');
-  if (!submission.visitDate) errors.push('实际到访日期');
-  if (!submission.workDuration) errors.push('实际办公时长');
-  if (submission.description.length < 40) errors.push('不少于 40 字的办公体验');
-  if (submission.submitterType === 'public' && savedPhotos.length < 1) errors.push('至少 1 张现场图片');
+  if (!submission.visitRecency) errors.push('到访时间');
+  if (!submission.workDurationChoice) errors.push('办公时长');
+  if (!submission.overallSuitability) errors.push('总体结论');
   if (cleanString(body.website, 200)) errors.push('提交验证失败');
   if (errors.length) {
     for (const imagePath of savedPhotos) {
@@ -484,18 +733,22 @@ function normalizeSubmission(body, user = null) {
 }
 
 function submissionToPlace(submission, overrides = {}) {
+  const chosenTags = Array.isArray(overrides.workModes) && overrides.workModes.length
+    ? overrides.workModes
+    : submission.suggestedTags || [];
   return {
     id: id('place'),
     name: submission.name,
     category: submission.category,
     lng: submission.lng,
     lat: submission.lat,
+    amapPoiId: submission.amapPoiId || '',
     address: submission.address,
     district: submission.district,
-    metroStation: submission.metroStation,
-    metroMinutes: submission.metroMinutes,
-    price: submission.price || (submission.free ? '免费' : '待确认'),
-    hours: submission.hours || '待确认',
+    metroStation: '',
+    metroMinutes: null,
+    price: submission.price || '待确认',
+    hours: '待确认',
     quietLevel: submission.quietLevel,
     wifi: submission.wifi || '待确认',
     outlets: submission.outlets || '待确认',
@@ -505,11 +758,29 @@ function submissionToPlace(submission, overrides = {}) {
     featured: bool(overrides.featured),
     verified: bool(overrides.verified),
     lastVerified: submission.visitDate || new Date().toISOString().slice(0, 10),
-    description: submission.description,
-    workModes: Array.isArray(overrides.workModes) ? overrides.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 4) : [],
+    description: cleanString(overrides.description || submission.description, 1600),
+    workModes: chosenTags.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8),
     images: submission.images || [],
     sourceSubmissionId: submission.id,
+    communityReports: [{
+      submissionId: submission.id,
+      submittedAt: submission.createdAt,
+      submitterType: submission.submitterType,
+      confidence: submission.confidence,
+      choices: {
+        overallSuitability: submission.overallSuitability,
+        outletsChoice: submission.outletsChoice,
+        wifiChoice: submission.wifiChoice,
+        quietChoice: submission.quietChoice,
+        callChoice: submission.callChoice,
+        longStayChoice: submission.longStayChoice,
+        priceChoice: submission.priceChoice,
+        seatingChoice: submission.seatingChoice,
+        crowdChoice: submission.crowdChoice
+      }
+    }],
     isDemo: false,
+    verificationStatus: bool(overrides.verified) ? 'verified' : 'community',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -536,13 +807,13 @@ function setSecurityHeaders(res) {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://*.amap.com https://*.autonavi.com",
-    "style-src 'self' 'unsafe-inline' https://*.amap.com https://*.autonavi.com",
-    "img-src 'self' data: blob: https://*.amap.com https://*.autonavi.com",
-    "connect-src 'self' https://*.amap.com https://*.autonavi.com https://restapi.amap.com",
-    "font-src 'self' data:",
-    "worker-src 'self' blob: https://*.amap.com https://*.autonavi.com",
-    "frame-src 'self' https://*.amap.com https://*.autonavi.com"
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https: wss:",
+    "font-src 'self' data: https:",
+    "worker-src 'self' blob: https:",
+    "frame-src 'self' https:"
   ].join('; '));
 }
 
@@ -580,7 +851,7 @@ function serveFile(req, res, requestPath) {
     const headers = {
       'Content-Type': mimeType(resolved),
       'Content-Length': stat.size,
-      'Cache-Control': requestPath.startsWith('/uploads/') ? 'public, max-age=31536000, immutable' : 'public, max-age=300'
+      'Cache-Control': requestPath.startsWith('/uploads/') ? 'public, max-age=31536000, immutable' : 'no-cache, max-age=0, must-revalidate'
     };
     res.writeHead(200, headers);
     fs.createReadStream(resolved).pipe(res);
@@ -595,6 +866,7 @@ function publicPlace(place) {
     categoryLabel: categoryLabels[place.category] || '地点',
     lng: place.lng,
     lat: place.lat,
+    amapPoiId: place.amapPoiId || '',
     address: place.address,
     district: place.district,
     metroStation: place.metroStation,
@@ -613,13 +885,363 @@ function publicPlace(place) {
     description: place.description,
     workModes: place.workModes || [],
     images: place.images || [],
-    isDemo: place.isDemo === true
+    isDemo: place.isDemo === true,
+    source: place.source || '',
+    sourceQuery: place.sourceQuery || '',
+    verificationStatus: place.verificationStatus || (place.verified ? 'verified' : 'pending')
   };
+}
+
+
+async function proxyAmapService(req, res, url) {
+  if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+  const securityCode = String(process.env.AMAP_SECURITY_CODE || '').trim().replace(/^["']|["']$/g, '');
+  if (!securityCode) return json(res, 503, { error: 'AMAP_SECURITY_CODE 未配置' });
+
+  const relativePath = url.pathname.replace(/^\/_AMapService\/?/, '');
+  const isStyleRequest = relativePath.startsWith('v4/map/styles');
+  const upstreamBase = isStyleRequest ? 'https://webapi.amap.com/' : 'https://restapi.amap.com/';
+  const target = new URL(relativePath + url.search, upstreamBase);
+  target.searchParams.set('jscode', securityCode);
+
+  try {
+    const response = await fetch(target, {
+      method: 'GET',
+      headers: {
+        'User-Agent': `NomadNanjing/${APP_VERSION}`,
+        'Accept': req.headers.accept || '*/*'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    const body = Buffer.from(await response.arrayBuffer());
+    res.writeHead(response.status, {
+      'Content-Type': response.headers.get('content-type') || 'application/json; charset=utf-8',
+      'Cache-Control': response.headers.get('cache-control') || 'no-store',
+      'Content-Length': body.length,
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(body);
+  } catch (error) {
+    json(res, 502, { error: '高德代理请求失败', detail: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+
+function cleanMapValue(value) {
+  const valueText = String(value || '').trim();
+  if ((valueText.startsWith('"') && valueText.endsWith('"')) || (valueText.startsWith("'") && valueText.endsWith("'"))) {
+    return valueText.slice(1, -1).trim();
+  }
+  return valueText;
+}
+
+function amapCredentials() {
+  return {
+    jsKey: cleanMapValue(process.env.AMAP_JS_KEY),
+    jsSecurityCode: cleanMapValue(process.env.AMAP_SECURITY_CODE),
+    webServiceKey: cleanMapValue(process.env.AMAP_WEB_SERVICE_KEY)
+  };
+}
+
+async function amapRestRequest(pathname, params = {}, timeoutMs = 12000) {
+  const { webServiceKey } = amapCredentials();
+  if (!webServiceKey) {
+    const error = new Error('AMAP_WEB_SERVICE_KEY 未配置。请创建“Web服务”类型的高德 Key。');
+    error.statusCode = 503;
+    throw error;
+  }
+  const upstreamBase = String(process.env.AMAP_REST_BASE || 'https://restapi.amap.com').replace(/\/+$/, '') + '/';
+  const target = new URL(String(pathname).replace(/^\/+/, ''), upstreamBase);
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') target.searchParams.set(name, String(value));
+  }
+  target.searchParams.set('key', webServiceKey);
+  target.searchParams.set('output', 'JSON');
+
+  const upstream = await fetch(target, {
+    headers: { 'User-Agent': `NomadNanjing/${APP_VERSION}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  const payload = await upstream.json().catch(() => ({}));
+  if (!upstream.ok || payload.status !== '1') {
+    const error = new Error(payload.info || payload.message || `高德服务请求失败（${upstream.status}）`);
+    error.statusCode = 502;
+    error.infocode = payload.infocode || '';
+    throw error;
+  }
+  return payload;
+}
+
+function amapText(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join('');
+  return cleanString(value, 300);
+}
+
+function normalizeAmapPoi(poi) {
+  const location = String(poi?.location || '');
+  const [lng, lat] = location.split(',').map(Number);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  const province = amapText(poi.pname);
+  const city = amapText(poi.cityname);
+  const district = amapText(poi.adname);
+  const streetAddress = amapText(poi.address);
+  const address = [province, city, district, streetAddress].filter(Boolean).join('');
+  return {
+    id: cleanString(poi.id, 80),
+    name: cleanString(poi.name, 160),
+    address: address || district || '南京市',
+    district,
+    lng,
+    lat,
+    type: cleanString(poi.type, 200),
+    typecode: cleanString(poi.typecode, 30),
+    tel: amapText(poi.tel)
+  };
+}
+
+async function searchAmapPlaces(query, { city = '南京', limit = 10 } = {}) {
+  const payload = await amapRestRequest('/v3/place/text', {
+    keywords: query,
+    city,
+    citylimit: 'true',
+    offset: Math.max(1, Math.min(20, Number(limit) || 10)),
+    page: 1,
+    extensions: 'all'
+  });
+  return (Array.isArray(payload.pois) ? payload.pois : []).map(normalizeAmapPoi).filter(Boolean);
+}
+
+async function reverseAmapLocation(lng, lat) {
+  const payload = await amapRestRequest('/v3/geocode/regeo', {
+    location: `${lng},${lat}`,
+    extensions: 'base',
+    radius: 1000,
+    roadlevel: 0
+  });
+  const regeocode = payload.regeocode || {};
+  const component = regeocode.addressComponent || {};
+  return {
+    address: cleanString(regeocode.formatted_address, 300),
+    district: amapText(component.district) || amapText(component.city)
+  };
+}
+
+function mergeCandidatePlaces(db, rows, { removeDemo = true } = {}) {
+  if (removeDemo) db.places = db.places.filter((item) => !item.isDemo);
+  const existingPoiIds = new Set(db.places.map((item) => item.amapPoiId).filter(Boolean));
+  const existingKeys = new Set(db.places.map((item) => `${String(item.name || '').replace(/\s+/g, '').toLowerCase()}|${String(item.address || '').replace(/\s+/g, '').toLowerCase()}`));
+  const imported = [];
+  const skipped = [];
+
+  for (const row of rows) {
+    const name = cleanString(row.name, 120);
+    const address = cleanString(row.address, 240);
+    const lng = numberInRange(row.lng, 118.3, 119.4);
+    const lat = numberInRange(row.lat, 31.5, 32.6);
+    const amapPoiId = cleanString(row.amapPoiId || row.id, 80);
+    const sourceQuery = cleanString(row.sourceQuery, 120);
+    const key = `${name.replace(/\s+/g, '').toLowerCase()}|${address.replace(/\s+/g, '').toLowerCase()}`;
+    if (!name || !address || lng === null || lat === null) {
+      skipped.push({ sourceQuery, reason: '位置信息不完整' });
+      continue;
+    }
+    if ((amapPoiId && existingPoiIds.has(amapPoiId)) || existingKeys.has(key)) {
+      skipped.push({ sourceQuery, name, reason: '已存在' });
+      continue;
+    }
+    const category = categoryLabels[row.category] ? row.category : 'coffee';
+    const place = {
+      id: id('place'),
+      name,
+      category,
+      lng,
+      lat,
+      amapPoiId,
+      address,
+      district: cleanString(row.district, 60),
+      metroStation: '',
+      metroMinutes: null,
+      price: category === 'library' || category === 'public' ? '待确认' : '待验证',
+      hours: '待验证',
+      quietLevel: category === 'library' ? 4 : 3,
+      wifi: '待验证',
+      outlets: '待验证',
+      callFriendly: false,
+      unlimited: false,
+      free: category === 'library',
+      featured: false,
+      verified: false,
+      verificationStatus: 'pending',
+      lastVerified: '',
+      description: '基础收录：由高德地点检索预录。营业时间、Wi-Fi、插座、安静程度和长时间办公友好度均需实地验证。',
+      workModes: ['待实地验证'],
+      images: [],
+      isDemo: false,
+      source: 'amap_candidate',
+      sourceQuery,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    db.places.push(place);
+    if (amapPoiId) existingPoiIds.add(amapPoiId);
+    existingKeys.add(key);
+    imported.push(place);
+  }
+  return { imported, skipped };
+}
+
+async function resolveCandidatePlaces(candidates, onProgress) {
+  const rows = [];
+  const failed = [];
+  let completed = 0;
+  const queue = [...candidates];
+  const workers = Array.from({ length: Math.min(3, queue.length || 1) }, async () => {
+    while (queue.length) {
+      const candidate = queue.shift();
+      try {
+        const places = await searchAmapPlaces(candidate.query, { city: '南京', limit: 5 });
+        const place = places[0];
+        if (!place) {
+          failed.push({ query: candidate.query, reason: '未找到结果' });
+        } else {
+          rows.push({
+            ...place,
+            amapPoiId: place.id,
+            category: candidate.category,
+            sourceQuery: candidate.query
+          });
+        }
+      } catch (error) {
+        failed.push({ query: candidate.query, reason: error.message });
+      }
+      completed += 1;
+      onProgress?.({ completed, total: candidates.length, matched: rows.length, failed: failed.length });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+  });
+  await Promise.all(workers);
+  return { rows, failed };
+}
+
+let candidateImportStatus = { running: false, completed: 0, total: candidatePlaceSearches.length, matched: 0, failed: 0, message: '尚未开始' };
+
+async function importCandidatePlacesFromAmap({ actor = 'system', force = false } = {}) {
+  if (candidateImportStatus.running) return { busy: true, status: candidateImportStatus };
+  const db = readDb();
+  db.meta ||= {};
+  if (!force && Number(db.meta.candidateSeedVersion || 0) >= 3) {
+    return { imported: 0, skipped: 0, failed: 0, alreadyDone: true };
+  }
+
+  candidateImportStatus = { running: true, completed: 0, total: candidatePlaceSearches.length, matched: 0, failed: 0, message: '正在检索高德地点' };
+  try {
+    const importedQueries = new Set(db.places.map((item) => item.sourceQuery).filter(Boolean));
+    const candidates = force ? candidatePlaceSearches : candidatePlaceSearches.filter((item) => !importedQueries.has(item.query));
+    const { rows, failed } = await resolveCandidatePlaces(candidates, (progress) => {
+      candidateImportStatus = { running: true, ...progress, message: `正在检索 ${progress.completed}/${progress.total}` };
+    });
+    const result = mergeCandidatePlaces(db, rows, { removeDemo: rows.length > 0 });
+    db.meta.candidateSeedVersion = rows.length > 0 ? 3 : Number(db.meta.candidateSeedVersion || 0);
+    db.meta.candidateSeedAt = new Date().toISOString();
+    db.meta.candidateSeedImported = result.imported.length;
+    db.meta.candidateSeedFailed = failed.length;
+    db.auditLog.unshift({ id: id('log'), action: 'candidate_places_imported_server', actor, count: result.imported.length, createdAt: new Date().toISOString() });
+    writeDb(db);
+    candidateImportStatus = {
+      running: false,
+      completed: candidates.length,
+      total: candidates.length,
+      matched: rows.length,
+      failed: failed.length,
+      message: `完成：新增 ${result.imported.length} 个，失败 ${failed.length} 个`
+    };
+    return { imported: result.imported.length, skipped: result.skipped.length, failed: failed.length, failedItems: failed.slice(0, 20) };
+  } catch (error) {
+    candidateImportStatus = { ...candidateImportStatus, running: false, message: `失败：${error.message}` };
+    throw error;
+  }
 }
 
 async function handleApi(req, res, url) {
   if (url.pathname === '/api/health' && req.method === 'GET') {
-    return json(res, 200, { ok: true, time: new Date().toISOString() });
+    return json(res, 200, { ok: true, version: APP_VERSION, time: new Date().toISOString() });
+  }
+
+
+  if (url.pathname === '/api/amap/search' && req.method === 'GET') {
+    if (rateLimited(req, 'amap-search', 60, 60 * 1000)) return json(res, 429, { error: '搜索过于频繁，请稍后再试。' });
+    const query = cleanString(url.searchParams.get('q'), 80);
+    const city = cleanString(url.searchParams.get('city') || '南京', 30) || '南京';
+    const limit = numberInRange(url.searchParams.get('limit'), 1, 20, 10);
+    if (query.length < 2) return json(res, 400, { error: '请输入至少两个字的店名。' });
+    try {
+      const places = await searchAmapPlaces(query, { city, limit });
+      return json(res, 200, { ok: true, query, places });
+    } catch (error) {
+      return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
+    }
+  }
+
+  if (url.pathname === '/api/amap/regeo' && req.method === 'GET') {
+    if (rateLimited(req, 'amap-regeo', 80, 60 * 1000)) return json(res, 429, { error: '地址识别过于频繁，请稍后再试。' });
+    const lng = numberInRange(url.searchParams.get('lng'), 118.3, 119.4);
+    const lat = numberInRange(url.searchParams.get('lat'), 31.5, 32.6);
+    if (lng === null || lat === null) return json(res, 400, { error: '无效的南京位置。' });
+    try {
+      const result = await reverseAmapLocation(lng, lat);
+      return json(res, 200, { ok: true, ...result });
+    } catch (error) {
+      return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
+    }
+  }
+
+
+  if (url.pathname === '/api/amap-check' && req.method === 'GET') {
+    const { jsKey, jsSecurityCode, webServiceKey } = amapCredentials();
+    if (!jsKey || !jsSecurityCode || !webServiceKey) {
+      return json(res, 200, {
+        ok: false,
+        stage: 'config',
+        mapConfigReady: Boolean(jsKey && jsSecurityCode),
+        webServiceReady: Boolean(webServiceKey),
+        missing: [
+          !jsKey ? 'AMAP_JS_KEY' : '',
+          !jsSecurityCode ? 'AMAP_SECURITY_CODE' : '',
+          !webServiceKey ? 'AMAP_WEB_SERVICE_KEY' : ''
+        ].filter(Boolean),
+        message: '高德配置不完整：地图显示需要 Web端(JS API) Key + 安全密钥；店名搜索和预录需要 Web服务 Key。'
+      });
+    }
+    try {
+      const target = new URL('https://restapi.amap.com/v3/config/district');
+      target.searchParams.set('keywords', '南京市');
+      target.searchParams.set('subdistrict', '0');
+      target.searchParams.set('extensions', 'base');
+      target.searchParams.set('key', webServiceKey);
+      const upstream = await fetch(target, { signal: AbortSignal.timeout(10000) });
+      const payload = await upstream.json().catch(() => ({}));
+      return json(res, 200, {
+        ok: payload.status === '1',
+        stage: 'amap-webservice',
+        mapConfigReady: true,
+        webServiceReady: payload.status === '1',
+        httpStatus: upstream.status,
+        info: payload.info || null,
+        infocode: payload.infocode || null,
+        message: payload.status === '1'
+          ? '高德地图显示配置已就绪，Web服务 Key 验证成功。'
+          : 'Web服务 Key 验证失败，请检查 info 和 infocode。'
+      });
+    } catch (error) {
+      return json(res, 200, {
+        ok: false,
+        stage: 'network',
+        mapConfigReady: true,
+        webServiceReady: false,
+        message: '服务器无法访问高德 Web 服务接口',
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   if (url.pathname === '/api/config' && req.method === 'GET') {
@@ -633,12 +1255,14 @@ async function handleApi(req, res, url) {
     const amapKey = cleanMapValue(process.env.AMAP_JS_KEY);
     const amapSecurityCode = cleanMapValue(process.env.AMAP_SECURITY_CODE);
     return json(res, 200, {
-      appName: process.env.APP_NAME || '南京办公地图',
-      appNameEn: process.env.APP_NAME_EN || 'Nanjing Work Map',
+      appName: process.env.APP_NAME || '南京数字游民办公地图',
+      appNameEn: process.env.APP_NAME_EN || 'Nomad Nanjing',
+      appVersion: APP_VERSION,
       amapKey,
-      amapSecurityCode,
+      mapSecurityMode: 'server-proxy',
       mapMode: amapKey ? 'amap' : 'demo',
       mapConfigReady: Boolean(amapKey && amapSecurityCode),
+      webServiceConfigured: Boolean(cleanMapValue(process.env.AMAP_WEB_SERVICE_KEY)),
       adminConfigured: Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET)
     });
   }
@@ -658,8 +1282,8 @@ async function handleApi(req, res, url) {
     }
     const body = await parseBody(req);
     const user = authUser(req);
-    const submission = normalizeSubmission(body, user?.role === 'contributor' ? user : null);
     const db = readDb();
+    const submission = normalizeSubmission(body, user?.role === 'contributor' ? user : null, db);
     db.submissions.unshift(submission);
     db.auditLog.unshift({ id: id('log'), action: 'submission_created', actor: submission.submitterEmail, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
@@ -704,6 +1328,9 @@ async function handleApi(req, res, url) {
         pending: submissions.filter((item) => item.status === 'pending').length,
         approved: submissions.filter((item) => item.status === 'approved').length,
         rejected: submissions.filter((item) => item.status === 'rejected').length,
+        needsInfo: submissions.filter((item) => item.status === 'needs_info').length,
+        secondaryReview: submissions.filter((item) => item.status === 'secondary_review').length,
+        merged: submissions.filter((item) => item.status === 'merged').length,
         places: db.places.filter((item) => !item.archived).length,
         contributors: db.contributors.filter((item) => item.active !== false).length
       },
@@ -711,6 +1338,42 @@ async function handleApi(req, res, url) {
       places: user.role === 'admin' ? db.places.filter((item) => !item.archived) : [],
       contributors: user.role === 'admin' ? db.contributors.map(({ passwordHash, passwordSalt, ...safe }) => safe) : []
     });
+  }
+
+  if (url.pathname === '/api/admin/candidate-seeds' && req.method === 'GET') {
+    const user = requireRole(req, res, ['admin']);
+    if (!user) return;
+    const db = readDb();
+    const importedQueries = new Set(db.places.map((item) => item.sourceQuery).filter(Boolean));
+    return json(res, 200, {
+      total: candidatePlaceSearches.length,
+      candidates: candidatePlaceSearches.map((item, index) => ({ ...item, index, imported: importedQueries.has(item.query) }))
+    });
+  }
+
+  if (url.pathname === '/api/admin/candidate-import-status' && req.method === 'GET') {
+    const user = requireRole(req, res, ['admin']);
+    if (!user) return;
+    const db = readDb();
+    return json(res, 200, {
+      ...candidateImportStatus,
+      seedVersion: Number(db.meta?.candidateSeedVersion || 0),
+      lastImportedAt: db.meta?.candidateSeedAt || '',
+      imported: Number(db.meta?.candidateSeedImported || 0)
+    });
+  }
+
+  if (url.pathname === '/api/admin/places/import-candidates' && req.method === 'POST') {
+    const user = requireRole(req, res, ['admin']);
+    if (!user) return;
+    const body = await parseBody(req, 200 * 1024).catch(() => ({}));
+    try {
+      const result = await importCandidatePlacesFromAmap({ actor: user.email, force: bool(body.force) });
+      if (result.busy) return json(res, 202, { ok: true, busy: true, status: result.status });
+      return json(res, 200, { ok: true, ...result });
+    } catch (error) {
+      return json(res, error.statusCode || 500, { error: error.message, infocode: error.infocode || '' });
+    }
   }
 
   const submissionMatch = /^\/api\/admin\/submissions\/([^/]+)$/.exec(url.pathname);
@@ -721,12 +1384,27 @@ async function handleApi(req, res, url) {
     const db = readDb();
     const submission = db.submissions.find((item) => item.id === submissionMatch[1]);
     if (!submission) return json(res, 404, { error: '未找到该提交。' });
-    const nextStatus = ['approved', 'rejected', 'pending'].includes(body.status) ? body.status : submission.status;
+
+    const correctedLng = numberInRange(body.lng, 118.3, 119.4, submission.lng);
+    const correctedLat = numberInRange(body.lat, 31.5, 32.6, submission.lat);
+    if (correctedLng !== null) submission.lng = correctedLng;
+    if (correctedLat !== null) submission.lat = correctedLat;
+    if ('address' in body && cleanString(body.address, 240)) submission.address = cleanString(body.address, 240);
+    if ('district' in body) submission.district = cleanString(body.district, 60);
+    if ('amapPoiId' in body) submission.amapPoiId = cleanString(body.amapPoiId, 80);
+
+    const allowedStatuses = ['approved', 'rejected', 'pending', 'needs_info', 'secondary_review', 'merged'];
+    const nextStatus = allowedStatuses.includes(body.status) ? body.status : submission.status;
+    if (['approved', 'merged'].includes(nextStatus) && (submission.lng === null || submission.lat === null || !submission.address)) {
+      return json(res, 400, { error: '通过或合并前，请先在地图中确认准确位置和地址。' });
+    }
+
     submission.status = nextStatus;
     submission.reviewNote = cleanString(body.reviewNote, 800);
     submission.updatedAt = new Date().toISOString();
     submission.reviewedAt = nextStatus === 'pending' ? null : new Date().toISOString();
     submission.reviewedBy = user.email;
+
     let place = null;
     if (nextStatus === 'approved') {
       place = db.places.find((item) => item.sourceSubmissionId === submission.id);
@@ -734,11 +1412,52 @@ async function handleApi(req, res, url) {
         place = submissionToPlace(submission, {
           featured: body.featured,
           verified: body.verified,
-          workModes: body.workModes
+          workModes: body.workModes,
+          description: body.description
         });
         db.places.unshift(place);
+      } else {
+        place.featured = bool(body.featured);
+        place.verified = bool(body.verified);
+        place.workModes = Array.isArray(body.workModes) ? body.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8) : place.workModes;
+        if (cleanString(body.description, 1600)) place.description = cleanString(body.description, 1600);
+        place.updatedAt = new Date().toISOString();
       }
     }
+
+    if (nextStatus === 'merged') {
+      const mergePlaceId = cleanString(body.mergePlaceId, 100);
+      place = db.places.find((item) => item.id === mergePlaceId && !item.archived);
+      if (!place) return json(res, 400, { error: '请选择一个已有地点进行合并。' });
+      place.communityReports = Array.isArray(place.communityReports) ? place.communityReports : [];
+      if (!place.communityReports.some((report) => report.submissionId === submission.id)) {
+        place.communityReports.unshift({
+          submissionId: submission.id,
+          submittedAt: submission.createdAt,
+          submitterType: submission.submitterType,
+          confidence: submission.confidence,
+          choices: {
+            overallSuitability: submission.overallSuitability,
+            outletsChoice: submission.outletsChoice,
+            wifiChoice: submission.wifiChoice,
+            quietChoice: submission.quietChoice,
+            callChoice: submission.callChoice,
+            longStayChoice: submission.longStayChoice,
+            priceChoice: submission.priceChoice,
+            seatingChoice: submission.seatingChoice,
+            crowdChoice: submission.crowdChoice
+          },
+          note: submission.experienceNote || ''
+        });
+      }
+      if (Array.isArray(submission.images) && submission.images.length) {
+        place.images = [...new Set([...(place.images || []), ...submission.images])].slice(0, 8);
+      }
+      place.lastCommunityReportAt = new Date().toISOString();
+      place.updatedAt = new Date().toISOString();
+      submission.mergedIntoPlaceId = place.id;
+    }
+
     db.auditLog.unshift({ id: id('log'), action: `submission_${nextStatus}`, actor: user.email, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
     return json(res, 200, { ok: true, submission, place: place ? publicPlace(place) : null });
@@ -754,6 +1473,7 @@ async function handleApi(req, res, url) {
       category: categoryLabels[body.category] ? body.category : 'coffee',
       lng: numberInRange(body.lng, 118.3, 119.4),
       lat: numberInRange(body.lat, 31.5, 32.6),
+      amapPoiId: cleanString(body.amapPoiId, 80),
       address: cleanString(body.address, 240),
       district: cleanString(body.district, 60),
       metroStation: cleanString(body.metroStation, 80),
@@ -777,7 +1497,7 @@ async function handleApi(req, res, url) {
       updatedAt: new Date().toISOString()
     };
     if (!place.name || !place.address || place.lng === null || place.lat === null) {
-      return json(res, 400, { error: '地点名称、地址和有效经纬度为必填项。' });
+      return json(res, 400, { error: '请通过地图确认地点名称、地址和精确位置。' });
     }
     const db = readDb();
     db.places.unshift(place);
@@ -794,7 +1514,7 @@ async function handleApi(req, res, url) {
     const db = readDb();
     const place = db.places.find((item) => item.id === placeMatch[1]);
     if (!place) return json(res, 404, { error: '未找到地点。' });
-    const editable = ['name', 'address', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified'];
+    const editable = ['name', 'address', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
     for (const key of editable) if (key in body) place[key] = cleanString(body[key], key === 'description' ? 1600 : 240);
     if (categoryLabels[body.category]) place.category = body.category;
     if ('lng' in body) place.lng = numberInRange(body.lng, 118.3, 119.4, place.lng);
@@ -879,6 +1599,10 @@ const server = http.createServer(async (req, res) => {
   setSecurityHeaders(res);
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
+    if (url.pathname.startsWith('/_AMapService/')) {
+      await proxyAmapService(req, res, url);
+      return;
+    }
     if (url.pathname.startsWith('/api/')) {
       await handleApi(req, res, url);
       return;
@@ -899,9 +1623,16 @@ const server = http.createServer(async (req, res) => {
 
 ensureDb();
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Nanjing Work Map running on http://0.0.0.0:${PORT}`);
+  console.log(`Nomad Nanjing running on http://0.0.0.0:${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD || !process.env.SESSION_SECRET) {
     console.warn('WARNING: ADMIN_EMAIL / ADMIN_PASSWORD / SESSION_SECRET are not fully configured. Set them before public launch.');
+  }
+  if (String(process.env.AUTO_IMPORT_CANDIDATES || 'true').toLowerCase() !== 'false') {
+    setTimeout(() => {
+      importCandidatePlacesFromAmap({ actor: 'system:auto-import', force: false })
+        .then((result) => console.log('Candidate auto-import:', result))
+        .catch((error) => console.error('Candidate auto-import failed:', error.message));
+    }, 1500);
   }
 });
