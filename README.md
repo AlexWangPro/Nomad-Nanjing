@@ -99,10 +99,18 @@ npm start
 
 
 
-## v2.4 前台照片与刷新
+## v2.5 前台照片与刷新
 
 - 审核通过或合并到地点后的现场照片会显示在前台地点详情中。
 - 地点列表会显示首张照片缩略图。
 - 点击详情照片可全屏查看。
 - 顶部新增刷新按钮，可在不刷新整个网页的情况下重新拉取地点与照片。
 - 投稿尚未通过审核时，照片只在管理员后台显示，不会提前公开。
+
+
+## v2.5 Railway 构建优化
+
+- Docker 基础镜像从 Alpine 改为 Debian Bookworm Slim。
+- Sharp 使用 Linux glibc 预编译依赖，避免 Alpine/musl 安装开销。
+- package.json 与 package-lock.json 保持独立依赖层，代码更新时可复用 Railway Docker 层缓存。
+- 图片 WebP 转换、100KB 限制、最多 8 张和前台图库功能保持不变。
