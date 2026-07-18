@@ -4,9 +4,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
+ENV NODE_NO_WARNINGS=1
 
-# Do not depend on a hidden .npmrc file. GitHub browser uploads may omit
-# dotfiles, so the public registry is specified directly in this command.
 COPY package.json package-lock.json ./
 RUN npm ci \
     --omit=dev \
@@ -17,7 +16,6 @@ RUN npm ci \
 
 COPY server.js ./
 COPY public ./public
-RUN mkdir -p /data/uploads
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "--no-warnings", "server.js"]

@@ -4,14 +4,16 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '3.0.0';
 const PORT = Number(process.env.PORT || 3000);
-const DATA_DIR = path.resolve(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'));
-const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
+const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
+const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
+const SQLITE_PATH = path.join(DATA_DIR, 'nomad-nanjing.sqlite');
+const LEGACY_DB_PATH = path.join(DATA_DIR, 'db.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || (IS_PRODUCTION ? '' : 'admin@nanjing.local')).toLowerCase();
@@ -19,7 +21,11 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (IS_PRODUCTION ? '' : 'Chan
 const SESSION_SECRET = process.env.SESSION_SECRET || (IS_PRODUCTION ? crypto.randomBytes(32).toString('hex') : 'local-development-secret-change-this-now');
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+if (IS_PRODUCTION && (process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_ID) && !RAILWAY_VOLUME_MOUNT_PATH) {
+  throw new Error('Persistent storage protection: attach a Railway Volume to this service at /data before deployment. The app refuses to start without a Volume so user data cannot be stored on an ephemeral filesystem.');
+}
 
 const categoryLabels = {
   coffee: '咖啡馆',
@@ -488,7 +494,7 @@ const seedPlaces = [
 
 function defaultDb() {
   return {
-    version: 2,
+    version: 3,
     places: seedPlaces,
     submissions: [],
     contributors: [],
@@ -499,31 +505,142 @@ function defaultDb() {
   };
 }
 
-function ensureDb() {
-  if (!fs.existsSync(DB_PATH)) {
-    writeDb(defaultDb());
+let sqlite;
+
+function initializeDatabase() {
+  sqlite = new DatabaseSync(SQLITE_PATH);
+  sqlite.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = FULL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+
+    CREATE TABLE IF NOT EXISTS app_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS app_state_history (
+      revision INTEGER PRIMARY KEY,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS media (
+      id TEXT PRIMARY KEY,
+      content_type TEXT NOT NULL,
+      bytes BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  const existing = sqlite.prepare('SELECT id FROM app_state WHERE id = 1').get();
+  if (existing) return;
+
+  let initial = defaultDb();
+  if (fs.existsSync(LEGACY_DB_PATH)) {
+    try {
+      const legacy = JSON.parse(fs.readFileSync(LEGACY_DB_PATH, 'utf8'));
+      if (legacy && Array.isArray(legacy.places) && Array.isArray(legacy.submissions)) {
+        initial = legacy;
+        initial.meta ||= {};
+        initial.meta.migratedFromJsonAt = new Date().toISOString();
+
+        const migratedMedia = new Map();
+        const migrateImageUrl = (imageUrl) => {
+          const match = /^\/uploads\/([A-Za-z0-9._-]+)$/.exec(String(imageUrl || ''));
+          if (!match) return imageUrl;
+          if (migratedMedia.has(imageUrl)) return migratedMedia.get(imageUrl);
+          const legacyImagePath = path.join(DATA_DIR, 'uploads', match[1]);
+          if (!fs.existsSync(legacyImagePath)) return imageUrl;
+          try {
+            const buffer = fs.readFileSync(legacyImagePath);
+            const mediaId = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}`;
+            sqlite.prepare('INSERT INTO media (id, content_type, bytes, size_bytes, created_at) VALUES (?, ?, ?, ?, ?)')
+              .run(mediaId, 'image/webp', buffer, buffer.length, new Date().toISOString());
+            const nextUrl = `/media/${mediaId}.webp`;
+            migratedMedia.set(imageUrl, nextUrl);
+            return nextUrl;
+          } catch (error) {
+            console.warn('Legacy image migration skipped:', match[1], error.message);
+            return imageUrl;
+          }
+        };
+        for (const collection of [initial.places, initial.submissions]) {
+          for (const item of collection) {
+            if (Array.isArray(item.images)) item.images = item.images.map(migrateImageUrl);
+          }
+        }
+        initial.meta.migratedMediaCount = migratedMedia.size;
+      }
+    } catch (error) {
+      console.warn('Legacy JSON migration skipped:', error.message);
+    }
   }
+
+  initial.updatedAt = new Date().toISOString();
+  sqlite.prepare('INSERT INTO app_state (id, data, revision, updated_at) VALUES (1, ?, 1, ?)')
+    .run(JSON.stringify(initial), initial.updatedAt);
+}
+
+function ensureDb() {
+  if (!sqlite) initializeDatabase();
 }
 
 function readDb() {
   ensureDb();
+  const row = sqlite.prepare('SELECT data FROM app_state WHERE id = 1').get();
+  if (!row?.data) throw new Error('SQLite application state is missing. Restore a Railway Volume backup instead of reinitializing the database.');
   try {
-    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    return JSON.parse(row.data);
   } catch (error) {
-    const backupPath = `${DB_PATH}.corrupt-${Date.now()}`;
-    try { fs.copyFileSync(DB_PATH, backupPath); } catch {}
-    const db = defaultDb();
-    writeDb(db);
-    return db;
+    throw new Error(`SQLite application state is invalid: ${error.message}. The database was not overwritten.`);
   }
 }
 
 function writeDb(db) {
+  ensureDb();
   db.updatedAt = new Date().toISOString();
-  const tempPath = `${DB_PATH}.${process.pid}.tmp`;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(tempPath, JSON.stringify(db, null, 2), 'utf8');
-  fs.renameSync(tempPath, DB_PATH);
+  const serialized = JSON.stringify(db);
+  sqlite.exec('BEGIN IMMEDIATE');
+  try {
+    const current = sqlite.prepare('SELECT data, revision FROM app_state WHERE id = 1').get();
+    const nextRevision = Number(current?.revision || 0) + 1;
+    if (current?.data) {
+      sqlite.prepare('INSERT OR REPLACE INTO app_state_history (revision, data, created_at) VALUES (?, ?, ?)')
+        .run(Number(current.revision || 1), current.data, new Date().toISOString());
+    }
+    sqlite.prepare('UPDATE app_state SET data = ?, revision = ?, updated_at = ? WHERE id = 1')
+      .run(serialized, nextRevision, db.updatedAt);
+    sqlite.prepare('DELETE FROM app_state_history WHERE revision NOT IN (SELECT revision FROM app_state_history ORDER BY revision DESC LIMIT 50)').run();
+    sqlite.exec('COMMIT');
+  } catch (error) {
+    try { sqlite.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
+
+function saveMedia(buffer) {
+  ensureDb();
+  const mediaId = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}`;
+  sqlite.prepare('INSERT INTO media (id, content_type, bytes, size_bytes, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(mediaId, 'image/webp', buffer, buffer.length, new Date().toISOString());
+  return `/media/${mediaId}.webp`;
+}
+
+function deleteMediaByUrl(mediaUrl) {
+  const match = /^\/media\/([A-Za-z0-9-]+)\.webp$/.exec(String(mediaUrl || ''));
+  if (!match) return;
+  ensureDb();
+  sqlite.prepare('DELETE FROM media WHERE id = ?').run(match[1]);
+}
+
+function getMediaById(mediaId) {
+  ensureDb();
+  return sqlite.prepare('SELECT content_type, bytes, size_bytes, created_at FROM media WHERE id = ?').get(mediaId);
 }
 
 function json(res, status, payload) {
@@ -695,9 +812,7 @@ async function saveImage(dataUrl) {
     throw Object.assign(new Error('图片处理失败，请换一张图片后重试。'), { statusCode: 400 });
   }
 
-  const filename = `${Date.now()}-${crypto.randomBytes(7).toString('hex')}.webp`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, filename), webp);
-  return `/uploads/${filename}`;
+  return saveMedia(webp);
 }
 
 async function normalizeSubmission(body, user = null, db = { places: [] }) {
@@ -709,9 +824,7 @@ async function normalizeSubmission(body, user = null, db = { places: [] }) {
       if (saved) savedPhotos.push(saved);
     }
   } catch (error) {
-    for (const imagePath of savedPhotos) {
-      try { fs.unlinkSync(path.join(DATA_DIR, imagePath.replace(/^\//, ''))); } catch {}
-    }
+    for (const imagePath of savedPhotos) deleteMediaByUrl(imagePath);
     throw error;
   }
   const actualWorked = body.actualWorked === false || body.actualWorked === 'false' ? false : true;
@@ -773,9 +886,7 @@ async function normalizeSubmission(body, user = null, db = { places: [] }) {
   if (!submission.overallSuitability) errors.push('总体结论');
   if (cleanString(body.website, 200)) errors.push('提交验证失败');
   if (errors.length) {
-    for (const imagePath of savedPhotos) {
-      try { fs.unlinkSync(path.join(DATA_DIR, imagePath.replace(/^\//, ''))); } catch {}
-    }
+    for (const imagePath of savedPhotos) deleteMediaByUrl(imagePath);
     throw Object.assign(new Error(`请补充：${errors.join('、')}。`), { statusCode: 400 });
   }
   return submission;
@@ -882,27 +993,30 @@ function mimeType(filePath) {
   }[ext] || 'application/octet-stream';
 }
 
+function serveMedia(res, mediaId) {
+  const row = getMediaById(mediaId);
+  if (!row?.bytes) return text(res, 404, 'Not found');
+  const body = Buffer.isBuffer(row.bytes) ? row.bytes : Buffer.from(row.bytes);
+  res.writeHead(200, {
+    'Content-Type': row.content_type || 'image/webp',
+    'Content-Length': body.length,
+    'Cache-Control': 'public, max-age=31536000, immutable',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.end(body);
+}
+
 function serveFile(req, res, requestPath) {
-  let filePath;
-  if (requestPath.startsWith('/uploads/')) {
-    filePath = path.join(DATA_DIR, requestPath.replace(/^\//, ''));
-  } else {
-    const normalized = requestPath === '/' ? '/index.html' : requestPath;
-    filePath = path.join(PUBLIC_DIR, normalized);
-  }
-  const allowedRoot = requestPath.startsWith('/uploads/') ? UPLOAD_DIR : PUBLIC_DIR;
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(allowedRoot))) {
-    return text(res, 403, 'Forbidden');
-  }
+  const normalized = requestPath === '/' ? '/index.html' : requestPath;
+  const resolved = path.resolve(path.join(PUBLIC_DIR, normalized));
+  if (!resolved.startsWith(path.resolve(PUBLIC_DIR))) return text(res, 403, 'Forbidden');
   fs.stat(resolved, (error, stat) => {
     if (error || !stat.isFile()) return text(res, 404, 'Not found');
-    const headers = {
+    res.writeHead(200, {
       'Content-Type': mimeType(resolved),
       'Content-Length': stat.size,
-      'Cache-Control': requestPath.startsWith('/uploads/') ? 'public, max-age=31536000, immutable' : 'no-cache, max-age=0, must-revalidate'
-    };
-    res.writeHead(200, headers);
+      'Cache-Control': 'no-cache, max-age=0, must-revalidate'
+    });
     fs.createReadStream(resolved).pipe(res);
   });
 }
@@ -1213,7 +1327,22 @@ async function importCandidatePlacesFromAmap({ actor = 'system', force = false }
 
 async function handleApi(req, res, url) {
   if (url.pathname === '/api/health' && req.method === 'GET') {
-    return json(res, 200, { ok: true, version: APP_VERSION, time: new Date().toISOString() });
+    ensureDb();
+    const stateRow = sqlite.prepare('SELECT revision, updated_at FROM app_state WHERE id = 1').get();
+    const mediaRow = sqlite.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes FROM media').get();
+    return json(res, 200, {
+      ok: true,
+      version: APP_VERSION,
+      time: new Date().toISOString(),
+      storage: {
+        engine: 'sqlite',
+        persistentVolume: Boolean(RAILWAY_VOLUME_MOUNT_PATH) || !IS_PRODUCTION,
+        revision: Number(stateRow?.revision || 0),
+        updatedAt: stateRow?.updated_at || '',
+        mediaCount: Number(mediaRow?.count || 0),
+        mediaBytes: Number(mediaRow?.bytes || 0)
+      }
+    });
   }
 
 
@@ -1648,6 +1777,11 @@ const server = http.createServer(async (req, res) => {
   setSecurityHeaders(res);
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
+    const mediaMatch = /^\/media\/([A-Za-z0-9-]+)\.webp$/.exec(url.pathname);
+    if (mediaMatch && req.method === 'GET') {
+      serveMedia(res, mediaMatch[1]);
+      return;
+    }
     if (url.pathname.startsWith('/_AMapService/')) {
       await proxyAmapService(req, res, url);
       return;
@@ -1673,7 +1807,8 @@ const server = http.createServer(async (req, res) => {
 ensureDb();
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Nomad Nanjing running on http://0.0.0.0:${PORT}`);
-  console.log(`Data directory: ${DATA_DIR}`);
+  console.log(`SQLite database: ${SQLITE_PATH}`);
+  console.log(`Persistent volume: ${RAILWAY_VOLUME_MOUNT_PATH || 'local development'}`);
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD || !process.env.SESSION_SECRET) {
     console.warn('WARNING: ADMIN_EMAIL / ADMIN_PASSWORD / SESSION_SECRET are not fully configured. Set them before public launch.');
   }
