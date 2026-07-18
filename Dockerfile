@@ -5,10 +5,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 
-# Force the public npm registry. This prevents Railway from trying to use
-# a machine-specific or private registry captured in a lockfile.
-COPY package.json package-lock.json .npmrc ./
-RUN npm ci --omit=dev --include=optional --no-audit --no-fund
+# Do not depend on a hidden .npmrc file. GitHub browser uploads may omit
+# dotfiles, so the public registry is specified directly in this command.
+COPY package.json package-lock.json ./
+RUN npm ci \
+    --omit=dev \
+    --include=optional \
+    --no-audit \
+    --no-fund \
+    --registry=https://registry.npmjs.org/
 
 COPY server.js ./
 COPY public ./public
