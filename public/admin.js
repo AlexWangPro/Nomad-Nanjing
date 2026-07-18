@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=2.2.0';
+import { mountLocationPicker } from './location-picker.js?v=2.3.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -492,26 +492,124 @@ async function createContributor(event) {
   }
 }
 
-async function fileToDataUrl(file) {
-  if (file.size > 2.5 * 1024 * 1024) throw new Error(`${file.name} 超过 2.5MB`);
-  return await new Promise((resolve, reject) => {
+const MAX_PORTAL_PHOTOS = 8;
+const TARGET_PORTAL_PHOTO_BYTES = 100 * 1024;
+const MAX_PORTAL_SOURCE_BYTES = 20 * 1024 * 1024;
+
+function portalBlobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(new Error('图片读取失败'));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
-async function handlePortalPhotos(event) {
-  const files = [...event.target.files].slice(0, 3);
-  try {
-    state.portalPhotos = await Promise.all(files.map(fileToDataUrl));
-    $('#portalPhotoPreview').innerHTML = state.portalPhotos.length ? state.portalPhotos.map((src) => `<img src="${src}" alt="现场图片预览" />`).join('') : '<span>暂未选择图片</span>';
-  } catch (error) {
-    state.portalPhotos = [];
-    event.target.value = '';
-    $('#portalPhotoPreview').innerHTML = `<span>${escapeHtml(error.message)}</span>`;
+async function decodePortalImage(file) {
+  if ('createImageBitmap' in window) {
+    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {}
   }
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = url;
+    await image.decode();
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function portalCanvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('当前浏览器无法生成 WebP 图片')), 'image/webp', quality);
+  });
+}
+
+async function compressPortalPhoto(file) {
+  if (!file.type.startsWith('image/')) throw new Error(`${file.name} 不是图片文件`);
+  if (file.size > MAX_PORTAL_SOURCE_BYTES) throw new Error(`${file.name} 超过 20MB，请先裁剪后重试`);
+  const source = await decodePortalImage(file);
+  const sourceWidth = source.naturalWidth || source.width;
+  const sourceHeight = source.naturalHeight || source.height;
+  const dimensions = [1600, 1400, 1200, 1000, 850, 720, 600, 480, 360, 280];
+  const qualities = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34, 0.28, 0.22, 0.18];
+  let smallest = null;
+  try {
+    for (const maxDimension of dimensions) {
+      const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { alpha: false });
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(source, 0, 0, width, height);
+      for (const quality of qualities) {
+        const blob = await portalCanvasToBlob(canvas, quality);
+        if (!smallest || blob.size < smallest.size) smallest = blob;
+        if (blob.size <= TARGET_PORTAL_PHOTO_BYTES) {
+          return { id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`, dataUrl: await portalBlobToDataUrl(blob), size: blob.size };
+        }
+      }
+    }
+  } finally {
+    source.close?.();
+  }
+  if (smallest && smallest.size <= TARGET_PORTAL_PHOTO_BYTES) {
+    return { id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`, dataUrl: await portalBlobToDataUrl(smallest), size: smallest.size };
+  }
+  throw new Error(`${file.name} 无法压缩到 100KB 内，请换一张或先裁剪`);
+}
+
+function renderPortalPhotoPreview() {
+  $('#portalPhotoCount').textContent = `${state.portalPhotos.length} / ${MAX_PORTAL_PHOTOS}`;
+  const preview = $('#portalPhotoPreview');
+  if (!state.portalPhotos.length) {
+    preview.innerHTML = '<span class="photo-empty">尚未选择图片</span>';
+    return;
+  }
+  preview.innerHTML = state.portalPhotos.map((photo, index) => `
+    <figure class="photo-item">
+      <img src="${photo.dataUrl}" alt="现场图片 ${index + 1}" />
+      <button type="button" class="photo-remove" data-portal-photo-remove="${photo.id}" aria-label="删除第 ${index + 1} 张图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <figcaption>${Math.ceil(photo.size / 1024)}KB · WebP</figcaption>
+    </figure>
+  `).join('');
+}
+
+async function handlePortalPhotos(event) {
+  const input = event.target;
+  const available = MAX_PORTAL_PHOTOS - state.portalPhotos.length;
+  const selected = [...input.files];
+  input.value = '';
+  if (!selected.length) return;
+  if (available <= 0) return feedback($('#portalSubmitFeedback'), '最多上传 8 张图片。', 'error');
+  const files = selected.slice(0, available);
+  const processing = $('#portalPhotoProcessing');
+  const errors = [];
+  let added = 0;
+  for (let index = 0; index < files.length; index += 1) {
+    processing.textContent = `正在转成 WebP 并压缩：${index + 1} / ${files.length}`;
+    try {
+      state.portalPhotos.push(await compressPortalPhoto(files[index]));
+      added += 1;
+      renderPortalPhotoPreview();
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  processing.textContent = added ? `已添加 ${added} 张，均已压缩到 100KB 内。` : '';
+  if (errors.length) feedback($('#portalSubmitFeedback'), errors[0], 'error');
+}
+
+function removePortalPhoto(photoId) {
+  state.portalPhotos = state.portalPhotos.filter((photo) => photo.id !== photoId);
+  renderPortalPhotoPreview();
+  $('#portalPhotoProcessing').textContent = state.portalPhotos.length ? '可以继续添加或删除图片。' : '';
 }
 
 function syncPortalLocationFields(form) {
@@ -542,7 +640,7 @@ async function contributorSubmit(event) {
     return;
   }
   payload.actualWorked = payload.actualWorked !== 'false';
-  payload.photos = state.portalPhotos;
+  payload.photos = state.portalPhotos.map((photo) => photo.dataUrl);
   const button = $('#portalSubmitButton');
   const node = $('#portalSubmitFeedback');
   button.disabled = true;
@@ -553,7 +651,8 @@ async function contributorSubmit(event) {
     form.reset();
     state.portalLocationPicker?.reset?.();
     state.portalPhotos = [];
-    $('#portalPhotoPreview').innerHTML = '<span>暂未选择图片</span>';
+    renderPortalPhotoPreview();
+    $('#portalPhotoProcessing').textContent = '';
     await refreshData();
   } catch (error) {
     feedback(node, error.message, 'error');
@@ -603,6 +702,11 @@ function wireEvents() {
   $('#importCandidatesButton').addEventListener('click', importCandidatePlaces);
   $('#contributorForm').addEventListener('submit', createContributor);
   $('#portalPhotoInput').addEventListener('change', handlePortalPhotos);
+  $('#portalPhotoPreview').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-portal-photo-remove]');
+    if (button) removePortalPhoto(button.dataset.portalPhotoRemove);
+  });
+  renderPortalPhotoPreview();
   $('#portalSubmissionForm').addEventListener('submit', contributorSubmit);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDrawer(); });
 }

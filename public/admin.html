@@ -114,8 +114,13 @@
                   <label><span>拥挤情况</span><select name="crowdChoice"><option value="unknown">不确定</option><option value="relaxed">通常不拥挤</option><option value="peak_only">高峰拥挤</option><option value="crowded">经常拥挤</option></select></label>
                 </div>
                 <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="4" placeholder="只写地图和选项没有覆盖的内容。"></textarea></label>
-                <label><span>现场图片（选填）</span><input id="portalPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label>
-                <div id="portalPhotoPreview" class="photo-preview"><span>暂未选择图片</span></div>
+                <div class="upload-field">
+                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转 WebP 并压缩到每张 100KB 内。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
+                  <input id="portalPhotoInput" type="file" accept="image/*" multiple hidden />
+                  <label class="photo-picker-button" for="portalPhotoInput"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>从手机相册多选图片</span></label>
+                  <p class="photo-processing" id="portalPhotoProcessing" role="status"></p>
+                  <div id="portalPhotoPreview" class="photo-preview"><span class="photo-empty">尚未选择图片</span></div>
+                </div>
                 <input name="website" class="honeypot" tabindex="-1" autocomplete="off" />
                 <div class="form-actions-inline"><button class="primary-button" id="portalSubmitButton" type="submit">提交审核</button></div>
                 <p class="form-feedback" id="portalSubmitFeedback"></p>
@@ -131,6 +136,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=2.2.0"></script>
+  <script type="module" src="/admin.js?v=2.3.0"></script>
 </body>
 </html>

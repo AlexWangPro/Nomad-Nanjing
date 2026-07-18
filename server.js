@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'));
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -647,24 +648,72 @@ function verifyPassword(password, salt, hash) {
   return safeEqual(derived, hash);
 }
 
-function saveImage(dataUrl) {
+async function convertToWebpUnderLimit(buffer, targetBytes = 100 * 1024) {
+  const dimensions = [1600, 1400, 1200, 1000, 850, 720, 600, 480, 360, 280];
+  const qualities = [82, 72, 62, 52, 42, 34, 28, 22, 18];
+  let smallest = null;
+
+  for (const dimension of dimensions) {
+    const base = sharp(buffer, { failOn: 'error', limitInputPixels: 50_000_000 })
+      .rotate()
+      .resize({
+        width: dimension,
+        height: dimension,
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+
+    for (const quality of qualities) {
+      const output = await base.clone().webp({
+        quality,
+        effort: 5,
+        smartSubsample: true
+      }).toBuffer();
+      if (!smallest || output.length < smallest.length) smallest = output;
+      if (output.length <= targetBytes) return output;
+    }
+  }
+
+  if (smallest && smallest.length <= targetBytes) return smallest;
+  throw Object.assign(new Error('图片内容过于复杂，无法压缩到 100KB 内。请换一张或先裁剪后重试。'), { statusCode: 413 });
+}
+
+async function saveImage(dataUrl) {
   if (!dataUrl) return null;
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
   if (!match) throw Object.assign(new Error('仅支持 JPG、PNG 或 WebP 图片。'), { statusCode: 400 });
-  const mime = match[1];
   const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 2.5 * 1024 * 1024) {
-    throw Object.assign(new Error('单张图片不能超过 2.5MB。'), { statusCode: 413 });
+  if (buffer.length > 12 * 1024 * 1024) {
+    throw Object.assign(new Error('单张原始图片不能超过 12MB。'), { statusCode: 413 });
   }
-  const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1];
-  const filename = `${Date.now()}-${crypto.randomBytes(7).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer);
+
+  let webp;
+  try {
+    webp = await convertToWebpUnderLimit(buffer);
+  } catch (error) {
+    if (error.statusCode) throw error;
+    throw Object.assign(new Error('图片处理失败，请换一张图片后重试。'), { statusCode: 400 });
+  }
+
+  const filename = `${Date.now()}-${crypto.randomBytes(7).toString('hex')}.webp`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, filename), webp);
   return `/uploads/${filename}`;
 }
 
-function normalizeSubmission(body, user = null, db = { places: [] }) {
-  const photos = Array.isArray(body.photos) ? body.photos.slice(0, 3) : [];
-  const savedPhotos = photos.map(saveImage).filter(Boolean);
+async function normalizeSubmission(body, user = null, db = { places: [] }) {
+  const photos = Array.isArray(body.photos) ? body.photos.slice(0, 8) : [];
+  const savedPhotos = [];
+  try {
+    for (const photo of photos) {
+      const saved = await saveImage(photo);
+      if (saved) savedPhotos.push(saved);
+    }
+  } catch (error) {
+    for (const imagePath of savedPhotos) {
+      try { fs.unlinkSync(path.join(DATA_DIR, imagePath.replace(/^\//, ''))); } catch {}
+    }
+    throw error;
+  }
   const actualWorked = body.actualWorked === false || body.actualWorked === 'false' ? false : true;
   const quietChoice = enumChoice('quietChoice', body.quietChoice || ({ 5: 'silent', 4: 'quiet', 3: 'unknown', 2: 'noisy', 1: 'loud' }[String(body.quietLevel)]));
   const submission = {
@@ -1283,11 +1332,11 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const user = authUser(req);
     const db = readDb();
-    const submission = normalizeSubmission(body, user?.role === 'contributor' ? user : null, db);
+    const submission = await normalizeSubmission(body, user?.role === 'contributor' ? user : null, db);
     db.submissions.unshift(submission);
     db.auditLog.unshift({ id: id('log'), action: 'submission_created', actor: submission.submitterEmail, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
-    return json(res, 201, { ok: true, submissionId: submission.id, message: '已进入审核队列。' });
+    return json(res, 201, { ok: true, submissionId: submission.id, message: '已提交，正在等待管理员审核。' });
   }
 
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {

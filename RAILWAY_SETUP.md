@@ -54,3 +54,6 @@ your-app-production.up.railway.app
 - `https://你的域名/api/amap-check`
 - `https://你的域名/api/amap/search?q=星巴克`
 - `https://你的域名/admin`
+
+
+注意：v2.3 新增 Sharp 图片处理依赖，Railway 会在 Docker 构建阶段自动安装，无需新增环境变量。

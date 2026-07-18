@@ -155,13 +155,36 @@
         <p class="form-note">下面全部选填。直接提交也可以；照片和感受会帮助管理员更快通过。</p>
         <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="5" placeholder="例如：二楼靠窗更安静、周末下午常满座、插座集中在靠墙位置。"></textarea></label>
         <label><span>其他注意事项（选填）</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：店员确认可以长时间使用电脑。"></textarea></label>
-        <label class="upload-field"><span>现场图片（选填，最多 3 张）</span><input id="photoInput" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><div class="photo-preview" id="photoPreview"><span>点击选择图片</span></div></label>
+        <div class="upload-field">
+          <div class="upload-heading">
+            <div><strong>现场图片（选填）</strong><span>最多 8 张；会自动转成 WebP，并压缩到每张 100KB 内。</span></div>
+            <span class="photo-count" id="photoCount">0 / 8</span>
+          </div>
+          <input id="photoInput" name="photos" type="file" accept="image/*" multiple hidden />
+          <label class="photo-picker-button" for="photoInput">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span>从手机相册多选图片</span>
+          </label>
+          <p class="photo-processing" id="photoProcessing" role="status"></p>
+          <div class="photo-preview" id="photoPreview"><span class="photo-empty">尚未选择图片</span></div>
+        </div>
         <div class="submission-summary" id="submissionSummary"></div>
         <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
         <div class="modal-actions"><button class="secondary-button" type="button" data-submit-back>上一步</button><button class="primary-button" id="submitButton" type="submit">提交审核</button></div>
         <p class="form-feedback" id="submissionFeedback" role="status"></p>
       </section>
     </form>
+  </dialog>
+
+
+  <dialog class="modal success-modal" id="submissionSuccessModal">
+    <div class="modal-card compact-card success-card">
+      <div class="success-orbit" aria-hidden="true"><span></span><span></span><span></span><svg viewBox="0 0 24 24"><path d="m7 12 3.2 3.2L17.5 8"/></svg></div>
+      <span class="success-kicker">SUBMITTED · 待审核</span>
+      <h2>谢谢你，为南京多点亮了一个可能。</h2>
+      <p>你的地点已经进入审核队列。去喝完手里的咖啡，看看窗外吧——生活不只在地图上，南京还有很多好地方等着被发现。</p>
+      <button class="primary-button success-close" type="button" data-close-modal="submissionSuccessModal">继续探索南京</button>
+    </div>
   </dialog>
 
   <dialog class="modal" id="favoriteModal">
@@ -200,6 +223,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=2.2.0"></script>
+  <script type="module" src="/app.js?v=2.3.0"></script>
 </body>
 </html>
