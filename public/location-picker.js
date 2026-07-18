@@ -91,6 +91,10 @@ function setField(root, name, value) {
   field.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+function getPlaceNameField(root) {
+  return root.querySelector('[name="placeName"]') || root.querySelector('[name="name"]');
+}
+
 function summaryHtml({ name, address, district, lng, lat }) {
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
     return '<strong>尚未确认位置</strong><span>输入店名搜索，或直接点击地图选择。</span>';
@@ -172,8 +176,8 @@ export async function mountLocationPicker({
     setField(fieldRoot, 'district', current.district || '');
     setField(fieldRoot, 'amapPoiId', current.poiId || '');
     if (current.name) {
-      const nameField = fieldRoot.querySelector('[name="placeName"], [name="name"]');
-      if (nameField && !nameField.value.trim()) nameField.value = current.name;
+      const nameField = getPlaceNameField(fieldRoot);
+      if (nameField) nameField.value = current.name;
     }
     updateSummary();
     onChange?.({ ...current });
@@ -205,7 +209,7 @@ export async function mountLocationPicker({
       lat: point[1]
     };
     if (meta.name) {
-      const nameField = fieldRoot.querySelector('[name="placeName"], [name="name"]');
+      const nameField = getPlaceNameField(fieldRoot);
       if (nameField) nameField.value = meta.name;
     }
     marker.setPosition(point);

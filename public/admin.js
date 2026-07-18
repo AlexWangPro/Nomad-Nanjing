@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js';
+import { mountLocationPicker } from './location-picker.js?v=2.2.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -514,9 +514,27 @@ async function handlePortalPhotos(event) {
   }
 }
 
+function syncPortalLocationFields(form) {
+  const selected = state.portalLocationPicker?.getValue?.();
+  if (!form || !selected) return;
+  const values = {
+    placeName: selected.name,
+    lng: Number.isFinite(Number(selected.lng)) ? Number(selected.lng).toFixed(6) : '',
+    lat: Number.isFinite(Number(selected.lat)) ? Number(selected.lat).toFixed(6) : '',
+    address: selected.address,
+    district: selected.district,
+    amapPoiId: selected.poiId
+  };
+  for (const [name, value] of Object.entries(values)) {
+    const field = form.elements[name];
+    if (field && value !== undefined && value !== null && String(value).trim()) field.value = value;
+  }
+}
+
 async function contributorSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  syncPortalLocationFields(form);
   const payload = Object.fromEntries(new FormData(form).entries());
   if (!payload.lng || !payload.lat || !payload.address || !payload.placeName) {
     feedback($('#portalSubmitFeedback'), '请先输入店名并选择一个具体高德地点。', 'error');

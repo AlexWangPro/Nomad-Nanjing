@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js';
+import { mountLocationPicker } from './location-picker.js?v=2.2.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -385,12 +385,31 @@ function updateSubmissionSummary() {
   node.innerHTML = `<strong>提交摘要</strong>${rows.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value || '未回答')}</b></div>`).join('')}`;
 }
 
+function syncPublicLocationFields() {
+  const form = $('#submissionForm');
+  const selected = state.submissionLocationPicker?.getValue?.();
+  if (!form || !selected) return;
+  const values = {
+    placeName: selected.name,
+    lng: Number.isFinite(Number(selected.lng)) ? Number(selected.lng).toFixed(6) : '',
+    lat: Number.isFinite(Number(selected.lat)) ? Number(selected.lat).toFixed(6) : '',
+    address: selected.address,
+    district: selected.district,
+    amapPoiId: selected.poiId
+  };
+  for (const [name, value] of Object.entries(values)) {
+    const field = form.elements[name];
+    if (field && value !== undefined && value !== null && String(value).trim()) field.value = value;
+  }
+}
+
 function validateSubmissionStep(step) {
   const form = $('#submissionForm');
   const feedback = $('#submissionStepFeedback');
   feedback.className = 'form-feedback submission-step-feedback';
   feedback.textContent = '';
   if (step === 1) {
+    syncPublicLocationFields();
     if (!form.elements.email.checkValidity()) {
       form.elements.email.reportValidity();
       return false;
@@ -464,6 +483,7 @@ async function submitPlace(event) {
   feedback.className = 'form-feedback';
   feedback.textContent = '';
   if (!validateSubmissionStep(1) || !validateSubmissionStep(2)) return;
+  syncPublicLocationFields();
   const data = Object.fromEntries(new FormData(form).entries());
   data.actualWorked = data.actualWorked !== 'false';
   data.photos = state.photoData;
