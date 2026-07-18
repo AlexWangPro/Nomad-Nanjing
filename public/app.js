@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=2.3.0';
+import { mountLocationPicker } from './location-picker.js?v=2.4.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -126,9 +126,13 @@ function renderList() {
     return;
   }
   list.innerHTML = state.filtered.map((place) => `
-    <button class="place-card" type="button" data-place-id="${escapeHtml(place.id)}">
+    <button class="place-card ${place.images?.length ? 'has-photo' : ''}" type="button" data-place-id="${escapeHtml(place.id)}">
       <div class="place-card-top">
-        <span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
+        ${place.images?.length ? `
+          <span class="place-card-thumb">
+            <img src="${escapeHtml(place.images[0])}" alt="${escapeHtml(place.name)}现场照片" loading="lazy" />
+            <span class="place-card-thumb-badge category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
+          </span>` : `<span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>`}
         <span class="place-card-copy">
           <h3>${escapeHtml(place.name)}</h3>
           <span class="place-meta">
@@ -238,6 +242,7 @@ function quietBars(level) {
 function renderDetail(place) {
   const isSaved = state.favorites.has(place.id);
   const tags = getTags(place);
+  const images = Array.isArray(place.images) ? place.images.filter(Boolean).slice(0, 8) : [];
   const navigateUrl = `https://uri.amap.com/marker?position=${encodeURIComponent(`${place.lng},${place.lat}`)}&name=${encodeURIComponent(place.name)}&coordinate=gaode&callnative=1`;
   $('#detailContent').innerHTML = `
     <div class="detail-kicker">
@@ -247,6 +252,14 @@ function renderDetail(place) {
     </div>
     <h2 class="detail-title">${escapeHtml(place.name)}</h2>
     <div class="detail-subtitle">${escapeHtml(place.address || '')}${place.metroStation ? ` · 距 ${escapeHtml(place.metroStation)}步行约 ${escapeHtml(place.metroMinutes ?? '?')} 分钟` : ''}</div>
+    ${images.length ? `
+      <div class="detail-photo-heading"><strong>现场照片</strong><span>${images.length} 张</span></div>
+      <div class="detail-photo-grid count-${Math.min(images.length, 4)}">
+        ${images.map((src, index) => `
+          <button type="button" class="detail-photo" data-view-image="${escapeHtml(src)}" data-view-caption="${escapeHtml(`${place.name} · 第 ${index + 1} 张`)}" aria-label="查看第 ${index + 1} 张现场照片">
+            <img src="${escapeHtml(src)}" alt="${escapeHtml(place.name)}现场照片 ${index + 1}" loading="lazy" />
+          </button>`).join('')}
+      </div>` : ''}
     <div class="detail-actions">
       <a class="primary-button" style="display:flex;align-items:center;justify-content:center" href="${navigateUrl}" target="_blank" rel="noreferrer">高德导航</a>
       <button class="secondary-button favorite-action ${isSaved ? 'saved' : ''}" id="detailFavorite" type="button" aria-label="${isSaved ? '取消收藏' : '收藏地点'}">
@@ -343,6 +356,46 @@ function showToast(message) {
   toast.classList.add('show');
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+function openImageViewer(src, caption = '') {
+  const dialog = $('#imageViewer');
+  const image = $('#imageViewerImage');
+  image.src = src;
+  image.alt = caption || '地点现场照片';
+  $('#imageViewerCaption').textContent = caption;
+  if (!dialog.open) dialog.showModal();
+}
+
+async function refreshPlaces() {
+  const button = $('#refreshPlaces');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.classList.add('is-loading');
+  setStatus('正在刷新地点…', true);
+  try {
+    const payload = await api(`/api/places?refresh=${Date.now()}`);
+    state.places = payload.places || [];
+    applyFilters();
+    renderFavorites();
+    if (state.selected) {
+      const updated = state.places.find((place) => place.id === state.selected.id);
+      if (updated) {
+        state.selected = updated;
+        renderDetail(updated);
+        highlightMarker(updated.id);
+      } else {
+        closeDetail();
+      }
+    }
+    showToast(`已刷新，共 ${state.places.length} 个地点`);
+  } catch (error) {
+    setStatus('刷新失败，请稍后重试', false);
+    showToast(error.message || '刷新失败');
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-loading');
+  }
 }
 
 function openModal(id) {
@@ -812,6 +865,7 @@ function wireEvents() {
     closeDetail();
     if (!state.usingFallback && state.map) state.map.setZoomAndCenter(11.7, [118.7969, 32.0603]);
   });
+  $('#refreshPlaces').addEventListener('click', refreshPlaces);
   $('#searchToggle').addEventListener('click', () => {
     $('#searchStrip').hidden = false;
     setTimeout(() => $('#searchInput').focus(), 20);
@@ -837,6 +891,10 @@ function wireEvents() {
     try { await ensurePublicLocationPicker(); } catch (error) { showToast(error.message); }
   });
   $('#detailClose').addEventListener('click', closeDetail);
+  $('#detailContent').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-view-image]');
+    if (button) openImageViewer(button.dataset.viewImage, button.dataset.viewCaption || '');
+  });
   $('#locationButton').addEventListener('click', locateUser);
   $('#photoInput').addEventListener('change', handlePhotos);
   $('#photoPreview').addEventListener('click', (event) => {

@@ -7,7 +7,7 @@
   <meta name="description" content="南京适合电脑办公、远程工作与数字游民使用的精选地点地图。" />
   <title>南京数字游民办公地图</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=2.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=2.4.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -22,6 +22,9 @@
         </span>
       </button>
       <div class="topbar-actions">
+        <button class="icon-button refresh-button" id="refreshPlaces" type="button" aria-label="刷新地点" title="刷新地点">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 8.2A7 7 0 0 1 18.4 6L20 8M4 16l1.6 2A7 7 0 0 0 17.9 15.8"/></svg>
+        </button>
         <button class="icon-button" id="searchToggle" type="button" aria-label="搜索地点" title="搜索地点">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.8"/><path d="m16.2 16.2 4.1 4.1"/></svg>
         </button>
@@ -200,6 +203,16 @@
     </div>
   </dialog>
 
+  <dialog class="modal image-viewer" id="imageViewer">
+    <button class="image-viewer-close" type="button" data-close-modal="imageViewer" aria-label="关闭图片">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
+    <figure class="image-viewer-frame">
+      <img id="imageViewerImage" alt="地点现场照片" />
+      <figcaption id="imageViewerCaption"></figcaption>
+    </figure>
+  </dialog>
+
   <template id="fallbackMapTemplate">
     <div class="fallback-map-art" aria-hidden="true">
       <svg viewBox="0 0 1000 760" preserveAspectRatio="none">
@@ -223,6 +236,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=2.3.0"></script>
+  <script type="module" src="/app.js?v=2.4.0"></script>
 </body>
 </html>
