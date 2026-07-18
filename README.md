@@ -99,7 +99,7 @@ npm start
 
 
 
-## v2.5 前台照片与刷新
+## v2.6 前台照片与刷新
 
 - 审核通过或合并到地点后的现场照片会显示在前台地点详情中。
 - 地点列表会显示首张照片缩略图。
@@ -108,9 +108,16 @@ npm start
 - 投稿尚未通过审核时，照片只在管理员后台显示，不会提前公开。
 
 
-## v2.5 Railway 构建优化
+## v2.6 Railway 构建优化
 
 - Docker 基础镜像从 Alpine 改为 Debian Bookworm Slim。
 - Sharp 使用 Linux glibc 预编译依赖，避免 Alpine/musl 安装开销。
 - package.json 与 package-lock.json 保持独立依赖层，代码更新时可复用 Railway Docker 层缓存。
 - 图片 WebP 转换、100KB 限制、最多 8 张和前台图库功能保持不变。
+
+## v2.6 Railway 构建修复
+
+- 修正 `package-lock.json` 中错误的私有 npm 镜像地址，统一使用 `https://registry.npmjs.org/`。
+- 增加 `.npmrc`，防止 Railway 构建环境继承错误 Registry。
+- Docker 构建继续使用 Sharp 的 Linux 预编译依赖，不在 Railway 中源码编译。
+- 如果 Railway 仍使用旧缓存，请在 Deployments 中选择 **Redeploy without cache** 一次；后续正常部署即可继续使用缓存。

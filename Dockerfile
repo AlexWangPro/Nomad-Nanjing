@@ -5,10 +5,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 
-# Keep dependency installation in its own layer so Railway can reuse it
-# whenever package.json and package-lock.json have not changed.
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund --prefer-offline
+# Force the public npm registry. This prevents Railway from trying to use
+# a machine-specific or private registry captured in a lockfile.
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --omit=dev --include=optional --no-audit --no-fund
 
 COPY server.js ./
 COPY public ./public
