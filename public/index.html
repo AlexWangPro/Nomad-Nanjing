@@ -7,7 +7,7 @@
   <meta name="description" content="南京适合电脑办公、远程工作与数字游民使用的精选地点地图。" />
   <title>南京数字游民办公地图</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=3.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.1.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -160,7 +160,7 @@
         <label><span>其他注意事项（选填）</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：店员确认可以长时间使用电脑。"></textarea></label>
         <div class="upload-field">
           <div class="upload-heading">
-            <div><strong>现场图片（选填）</strong><span>最多 8 张；会自动转成 WebP，并压缩到每张 100KB 内。</span></div>
+            <div><strong>现场图片（选填）</strong><span>最多 8 张；自动转成高清 WebP，每张控制在约 300KB 内。</span></div>
             <span class="photo-count" id="photoCount">0 / 8</span>
           </div>
           <input id="photoInput" name="photos" type="file" accept="image/*" multiple hidden />
@@ -203,14 +203,25 @@
     </div>
   </dialog>
 
-  <dialog class="modal image-viewer" id="imageViewer">
+  <dialog class="modal image-viewer" id="imageViewer" aria-label="现场照片浏览器">
     <button class="image-viewer-close" type="button" data-close-modal="imageViewer" aria-label="关闭图片">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
     </button>
-    <figure class="image-viewer-frame">
-      <img id="imageViewerImage" alt="地点现场照片" />
-      <figcaption id="imageViewerCaption"></figcaption>
+    <button class="image-viewer-nav image-viewer-prev" id="imageViewerPrev" type="button" aria-label="查看上一张图片">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
+    </button>
+    <figure class="image-viewer-frame" id="imageViewerFrame">
+      <div class="image-viewer-stage" id="imageViewerStage">
+        <img id="imageViewerImage" alt="地点现场照片" draggable="false" />
+      </div>
+      <figcaption>
+        <span id="imageViewerCaption"></span>
+        <span class="image-viewer-counter" id="imageViewerCounter"></span>
+      </figcaption>
     </figure>
+    <button class="image-viewer-nav image-viewer-next" id="imageViewerNext" type="button" aria-label="查看下一张图片">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
   </dialog>
 
   <template id="fallbackMapTemplate">
@@ -236,6 +247,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.0.0"></script>
+  <script type="module" src="/app.js?v=3.1.0"></script>
 </body>
 </html>

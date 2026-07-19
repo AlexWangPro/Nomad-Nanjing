@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.0.0';
+import { mountLocationPicker } from './location-picker.js?v=3.1.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -493,7 +493,7 @@ async function createContributor(event) {
 }
 
 const MAX_PORTAL_PHOTOS = 8;
-const TARGET_PORTAL_PHOTO_BYTES = 100 * 1024;
+const TARGET_PORTAL_PHOTO_BYTES = 300 * 1024;
 const MAX_PORTAL_SOURCE_BYTES = 20 * 1024 * 1024;
 
 function portalBlobToDataUrl(blob) {
@@ -533,8 +533,8 @@ async function compressPortalPhoto(file) {
   const source = await decodePortalImage(file);
   const sourceWidth = source.naturalWidth || source.width;
   const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [1600, 1400, 1200, 1000, 850, 720, 600, 480, 360, 280];
-  const qualities = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34, 0.28, 0.22, 0.18];
+  const dimensions = [1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720, 600];
+  const qualities = [0.88, 0.82, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46, 0.40];
   let smallest = null;
   try {
     for (const maxDimension of dimensions) {
@@ -562,7 +562,7 @@ async function compressPortalPhoto(file) {
   if (smallest && smallest.size <= TARGET_PORTAL_PHOTO_BYTES) {
     return { id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`, dataUrl: await portalBlobToDataUrl(smallest), size: smallest.size };
   }
-  throw new Error(`${file.name} 无法压缩到 100KB 内，请换一张或先裁剪`);
+  throw new Error(`${file.name} 无法压缩到约 300KB 内，请换一张或先裁剪`);
 }
 
 function renderPortalPhotoPreview() {
@@ -602,7 +602,7 @@ async function handlePortalPhotos(event) {
       errors.push(error.message);
     }
   }
-  processing.textContent = added ? `已添加 ${added} 张，均已压缩到 100KB 内。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，均已转成高清 WebP。` : '';
   if (errors.length) feedback($('#portalSubmitFeedback'), errors[0], 'error');
 }
 

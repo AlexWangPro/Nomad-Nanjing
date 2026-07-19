@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -765,9 +765,9 @@ function verifyPassword(password, salt, hash) {
   return safeEqual(derived, hash);
 }
 
-async function convertToWebpUnderLimit(buffer, targetBytes = 100 * 1024) {
-  const dimensions = [1600, 1400, 1200, 1000, 850, 720, 600, 480, 360, 280];
-  const qualities = [82, 72, 62, 52, 42, 34, 28, 22, 18];
+async function convertToWebpUnderLimit(buffer, targetBytes = 300 * 1024) {
+  const dimensions = [1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720, 600];
+  const qualities = [88, 82, 76, 70, 64, 58, 52, 46, 40];
   let smallest = null;
 
   for (const dimension of dimensions) {
@@ -783,7 +783,7 @@ async function convertToWebpUnderLimit(buffer, targetBytes = 100 * 1024) {
     for (const quality of qualities) {
       const output = await base.clone().webp({
         quality,
-        effort: 5,
+        effort: 4,
         smartSubsample: true
       }).toBuffer();
       if (!smallest || output.length < smallest.length) smallest = output;
@@ -792,7 +792,7 @@ async function convertToWebpUnderLimit(buffer, targetBytes = 100 * 1024) {
   }
 
   if (smallest && smallest.length <= targetBytes) return smallest;
-  throw Object.assign(new Error('图片内容过于复杂，无法压缩到 100KB 内。请换一张或先裁剪后重试。'), { statusCode: 413 });
+  throw Object.assign(new Error('图片内容过于复杂，无法压缩到约 300KB 内。请换一张或先裁剪后重试。'), { statusCode: 413 });
 }
 
 async function saveImage(dataUrl) {

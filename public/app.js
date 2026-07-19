@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.0.0';
+import { mountLocationPicker } from './location-picker.js?v=3.1.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -18,7 +18,8 @@ const state = {
   photoData: [],
   amapDiagnostics: [],
   submissionLocationPicker: null,
-  submissionStep: 1
+  submissionStep: 1,
+  imageViewer: { images: [], index: 0, placeName: '', touchStartX: 0, touchStartY: 0 }
 };
 
 const filters = [
@@ -256,7 +257,7 @@ function renderDetail(place) {
       <div class="detail-photo-heading"><strong>现场照片</strong><span>${images.length} 张</span></div>
       <div class="detail-photo-grid count-${Math.min(images.length, 4)}">
         ${images.map((src, index) => `
-          <button type="button" class="detail-photo" data-view-image="${escapeHtml(src)}" data-view-caption="${escapeHtml(`${place.name} · 第 ${index + 1} 张`)}" aria-label="查看第 ${index + 1} 张现场照片">
+          <button type="button" class="detail-photo" data-view-image-index="${index}" aria-label="查看第 ${index + 1} 张现场照片">
             <img src="${escapeHtml(src)}" alt="${escapeHtml(place.name)}现场照片 ${index + 1}" loading="lazy" />
           </button>`).join('')}
       </div>` : ''}
@@ -358,13 +359,45 @@ function showToast(message) {
   showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
-function openImageViewer(src, caption = '') {
-  const dialog = $('#imageViewer');
+function renderImageViewer(direction = 0) {
+  const viewer = state.imageViewer;
+  const total = viewer.images.length;
+  if (!total) return;
+  viewer.index = (viewer.index + total) % total;
+  const src = viewer.images[viewer.index];
   const image = $('#imageViewerImage');
+  const stage = $('#imageViewerStage');
+  stage.classList.remove('slide-next', 'slide-prev');
+  if (direction) {
+    void stage.offsetWidth;
+    stage.classList.add(direction > 0 ? 'slide-next' : 'slide-prev');
+  }
   image.src = src;
-  image.alt = caption || '地点现场照片';
-  $('#imageViewerCaption').textContent = caption;
+  image.alt = `${viewer.placeName || '地点'}现场照片 ${viewer.index + 1}`;
+  $('#imageViewerCaption').textContent = viewer.placeName || '现场照片';
+  $('#imageViewerCounter').textContent = `${viewer.index + 1} / ${total}`;
+  $('#imageViewerPrev').hidden = total < 2;
+  $('#imageViewerNext').hidden = total < 2;
+  const next = viewer.images[(viewer.index + 1) % total];
+  const prev = viewer.images[(viewer.index - 1 + total) % total];
+  if (total > 1) { new Image().src = next; new Image().src = prev; }
+}
+
+function openImageViewer(images, index = 0, placeName = '') {
+  const clean = Array.isArray(images) ? images.filter(Boolean).slice(0, 8) : [];
+  if (!clean.length) return;
+  state.imageViewer.images = clean;
+  state.imageViewer.index = Math.max(0, Math.min(Number(index) || 0, clean.length - 1));
+  state.imageViewer.placeName = placeName;
+  renderImageViewer();
+  const dialog = $('#imageViewer');
   if (!dialog.open) dialog.showModal();
+}
+
+function moveImageViewer(step) {
+  if (state.imageViewer.images.length < 2) return;
+  state.imageViewer.index += step;
+  renderImageViewer(step);
 }
 
 async function refreshPlaces() {
@@ -486,7 +519,7 @@ function validateSubmissionStep(step) {
 }
 
 const MAX_PHOTOS = 8;
-const TARGET_PHOTO_BYTES = 100 * 1024;
+const TARGET_PHOTO_BYTES = 300 * 1024;
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
 
 function blobToDataUrl(blob) {
@@ -529,8 +562,8 @@ async function compressPhoto(file) {
   const source = await decodeImage(file);
   const sourceWidth = source.naturalWidth || source.width;
   const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [1600, 1400, 1200, 1000, 850, 720, 600, 480, 360, 280];
-  const qualities = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34, 0.28, 0.22, 0.18];
+  const dimensions = [1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720, 600];
+  const qualities = [0.88, 0.82, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46, 0.40];
   let smallest = null;
 
   try {
@@ -575,7 +608,7 @@ async function compressPhoto(file) {
       height: 0
     };
   }
-  throw new Error(`${file.name} 无法压缩到 100KB 内，请换一张或先裁剪`);
+  throw new Error(`${file.name} 无法压缩到约 300KB 内，请换一张或先裁剪`);
 }
 
 function renderPhotoPreview() {
@@ -623,7 +656,7 @@ async function handlePhotos(event) {
     }
   }
 
-  processing.textContent = added ? `已添加 ${added} 张，均已压缩到 100KB 内。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，均已转成高清 WebP。` : '';
   if (errors.length) showToast(errors[0]);
 }
 
@@ -892,9 +925,24 @@ function wireEvents() {
   });
   $('#detailClose').addEventListener('click', closeDetail);
   $('#detailContent').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-view-image]');
-    if (button) openImageViewer(button.dataset.viewImage, button.dataset.viewCaption || '');
+    const button = event.target.closest('[data-view-image-index]');
+    if (!button || !state.selected) return;
+    openImageViewer(state.selected.images || [], Number(button.dataset.viewImageIndex), state.selected.name);
   });
+  $('#imageViewerPrev').addEventListener('click', () => moveImageViewer(-1));
+  $('#imageViewerNext').addEventListener('click', () => moveImageViewer(1));
+  const viewerStage = $('#imageViewerStage');
+  viewerStage.addEventListener('touchstart', (event) => {
+    const touch = event.changedTouches[0];
+    state.imageViewer.touchStartX = touch.clientX;
+    state.imageViewer.touchStartY = touch.clientY;
+  }, { passive: true });
+  viewerStage.addEventListener('touchend', (event) => {
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - state.imageViewer.touchStartX;
+    const dy = touch.clientY - state.imageViewer.touchStartY;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.25) moveImageViewer(dx < 0 ? 1 : -1);
+  }, { passive: true });
   $('#locationButton').addEventListener('click', locateUser);
   $('#photoInput').addEventListener('change', handlePhotos);
   $('#photoPreview').addEventListener('click', (event) => {
@@ -910,6 +958,11 @@ function wireEvents() {
     if (event.target === dialog) dialog.close();
   }));
   document.addEventListener('keydown', (event) => {
+    if ($('#imageViewer').open) {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); moveImageViewer(-1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); moveImageViewer(1); }
+      return;
+    }
     if (event.key === 'Escape' && $('#detailSheet').classList.contains('open')) closeDetail();
   });
 }

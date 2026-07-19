@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.0 Railway 部署说明
+# Nomad Nanjing v3.1 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.0 之前：
+在部署 v3.1 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -19,11 +19,11 @@ Railway 会自动提供：
 RAILWAY_VOLUME_MOUNT_PATH=/data
 ```
 
-v3.0 在 Railway 生产环境检测不到 Volume 时会拒绝启动。这是数据保护机制，不是程序故障。
+v3.1 在 Railway 生产环境检测不到 Volume 时会拒绝启动。这是数据保护机制，不是程序故障。
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.0 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v3.1 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.0.0",
+  "version": "3.1.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -107,7 +107,7 @@ storage.persistentVolume = true
 - 每张压缩到 100KB 内
 - 最多 8 张
 
-但 v3.0 不再生成 `/data/uploads` 文件。图片二进制直接写入 SQLite 的 `media` 表，并通过 `/media/<id>.webp` 提供给前端。
+但 v3.1 不再生成 `/data/uploads` 文件。图片二进制直接写入 SQLite 的 `media` 表，并通过 `/media/<id>.webp` 提供给前端。
 
 ## 7. Railway Volume 备份
 
