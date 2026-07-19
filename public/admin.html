@@ -6,15 +6,22 @@
   <meta name="theme-color" content="#eef1ed" />
   <meta name="description" content="南京数字游民办公地图审核与贡献者后台" />
   <title>南京数字游民办公地图 · 管理后台</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=3.3.0" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
+  <link rel="stylesheet" href="/styles.css?v=3.4.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
     <section class="admin-login-view" id="loginView">
       <div class="login-card">
         <div class="login-brand">
-          <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
+          <span class="brand-mark" aria-hidden="true"><img src="/logo.svg" alt="" /></span>
           <div><h1>贡献者与管理后台</h1><p style="margin:5px 0 0">Nomad Nanjing Portal</p></div>
         </div>
         <p>管理员可审核地点、维护地图和邀请贡献者；受邀贡献者可以提交地点并查看自己的审核结果。</p>
@@ -31,7 +38,7 @@
     <section class="portal" id="portalView" hidden>
       <header class="portal-topbar">
         <a class="portal-brand" href="/">
-          <span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4.5c-6.9 0-12.5 5.5-12.5 12.3 0 8.9 10.2 17.3 11.4 18.3a1.8 1.8 0 0 0 2.2 0c1.2-1 11.4-9.4 11.4-18.3C32.5 10 26.9 4.5 20 4.5Z" fill="currentColor"/><circle cx="20" cy="17" r="5.2" fill="#fff"/></svg></span>
+          <span class="brand-mark" aria-hidden="true"><img src="/logo.svg" alt="" /></span>
           <strong>南京数字游民办公地图</strong>
         </a>
         <div class="portal-user">
@@ -136,6 +143,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=3.3.0"></script>
+  <script type="module" src="/admin.js?v=3.4.0"></script>
 </body>
 </html>

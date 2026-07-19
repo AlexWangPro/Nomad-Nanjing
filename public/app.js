@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.3.0';
+import { mountLocationPicker } from './location-picker.js?v=3.4.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -993,6 +993,9 @@ function wireEvents() {
 
 async function init() {
   wireEvents();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker registration failed:', error));
+  }
   renderPhotoPreview();
   renderFilters();
   try {
@@ -1004,6 +1007,12 @@ async function init() {
     document.title = config.appName;
     applyFilters();
     await initMap();
+    if (new URLSearchParams(window.location.search).get('action') === 'submit') {
+      setSubmissionStep(1);
+      openModal('submitModal');
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      try { await ensurePublicLocationPicker(); } catch (error) { showToast(error.message); }
+    }
   } catch (error) {
     renderFallback();
     $('#placeList').innerHTML = `<div class="empty-state">${escapeHtml(error.message)}<br>请稍后刷新页面。</div>`;

@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.3.0",
+  "version": "3.4.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -130,3 +130,8 @@ storage.persistentVolume = true
 - 贡献者编辑已发布地点：生成待审核修改，管理员批准后生效。
 - 删除照片只有在管理员保存或审核通过后才会真正从公开地点移除。
 - 更新代码无需新增环境变量，也不会修改现有 SQLite 数据库。
+
+
+## 手机桌面图标检查
+
+部署后检查 `/manifest.webmanifest`、`/logo.svg` 和 `/icons/icon-512.png`。无需新增 Railway 环境变量。

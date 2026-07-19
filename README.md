@@ -1,4 +1,4 @@
-# Nomad Nanjing v3.3 — Railway 数据库持久化版
+# Nomad Nanjing Railway v3.4
 
 南京数字游民办公地图的 Railway 专用版本。
 
@@ -55,3 +55,14 @@ Railway Volume /data
 - 每张目标约 150KB，最多 8 张。
 - 服务器会再次处理和校验，确保绕过前端上传的图片也符合限制。
 - 对高细节照片会继续降低分辨率和质量，而不是提示用户先裁剪。
+
+
+## v3.4 手机桌面图标 / PWA
+
+- SVG Logo 与 favicon
+- 192×192、512×512、maskable 和 Apple Touch PNG 图标
+- `manifest.webmanifest`
+- 网络直连型 Service Worker：不缓存旧页面，避免 Railway 更新后显示旧版本
+- 首页与管理后台统一使用新 Logo
+
+iPhone Safari：分享 → 添加到主屏幕。Android Chrome：安装应用/添加到主屏幕。

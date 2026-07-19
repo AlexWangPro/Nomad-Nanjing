@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.3.0';
+import { mountLocationPicker } from './location-picker.js?v=3.4.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
