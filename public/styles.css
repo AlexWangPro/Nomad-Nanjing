@@ -867,3 +867,19 @@ body.admin-page { overflow: auto; background: #eef1ed; }
   .image-viewer-next { right: 8px; }
   .detail-photo::after { display: none; }
 }
+
+/* v3.2 published place editing */
+.contributor-edit-note { margin: 0 0 16px; padding: 12px 14px; border: 1px solid rgba(31,107,82,.18); border-radius: 14px; background: rgba(31,107,82,.07); color: #35594b; font-size: 12px; line-height: 1.55; }
+.place-photo-editor { margin: 4px 0 2px; padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: #f8faf8; }
+.place-photo-preview { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.place-change-list { display: grid; gap: 8px; margin: 15px 0; }
+.place-change-list > div { display: grid; grid-template-columns: 90px minmax(0,1fr) minmax(0,1fr); gap: 10px; align-items: start; padding: 11px 12px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+.place-change-list span { color: var(--muted); font-size: 10px; font-weight: 800; }
+.place-change-list small { color: #7b8680; font-size: 11px; line-height: 1.45; }
+.place-change-list strong { color: var(--ink); font-size: 11px; line-height: 1.45; }
+.editable-review-images { grid-template-columns: repeat(4,minmax(0,1fr)); }
+@media (max-width: 610px) {
+  .place-photo-preview, .editable-review-images { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .place-change-list > div { grid-template-columns: 72px 1fr; }
+  .place-change-list strong { grid-column: 2; }
+}

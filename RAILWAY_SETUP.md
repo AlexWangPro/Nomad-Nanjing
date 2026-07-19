@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.1 Railway 部署说明
+# Nomad Nanjing v3.2 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.1 之前：
+在部署 v3.2 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -19,11 +19,11 @@ Railway 会自动提供：
 RAILWAY_VOLUME_MOUNT_PATH=/data
 ```
 
-v3.1 在 Railway 生产环境检测不到 Volume 时会拒绝启动。这是数据保护机制，不是程序故障。
+v3.2 在 Railway 生产环境检测不到 Volume 时会拒绝启动。这是数据保护机制，不是程序故障。
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.1 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v3.2 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.1.0",
+  "version": "3.2.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -104,10 +104,10 @@ storage.persistentVolume = true
 用户上传图片仍会：
 
 - 自动转 WebP
-- 每张压缩到 100KB 内
+- 每张压缩到约 300KB 内
 - 最多 8 张
 
-但 v3.1 不再生成 `/data/uploads` 文件。图片二进制直接写入 SQLite 的 `media` 表，并通过 `/media/<id>.webp` 提供给前端。
+但 v3.2 不再生成 `/data/uploads` 文件。图片二进制直接写入 SQLite 的 `media` 表，并通过 `/media/<id>.webp` 提供给前端。
 
 ## 7. Railway Volume 备份
 
@@ -123,3 +123,10 @@ storage.persistentVolume = true
 - 同时运行多个应用 Replica 写同一个 SQLite 数据库
 
 只要 Volume 仍连接到当前服务并挂载到 `/data`，后续代码更新不会影响旧数据。
+
+## 9. v3.2 权限说明
+
+- 管理员编辑已发布地点：立即生效。
+- 贡献者编辑已发布地点：生成待审核修改，管理员批准后生效。
+- 删除照片只有在管理员保存或审核通过后才会真正从公开地点移除。
+- 更新代码无需新增环境变量，也不会修改现有 SQLite 数据库。

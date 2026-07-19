@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -815,6 +815,69 @@ async function saveImage(dataUrl) {
   return saveMedia(webp);
 }
 
+function editablePlaceSnapshot(place) {
+  return {
+    name: cleanString(place.name, 120),
+    category: categoryLabels[place.category] ? place.category : 'coffee',
+    lng: numberInRange(place.lng, 118.3, 119.4),
+    lat: numberInRange(place.lat, 31.5, 32.6),
+    amapPoiId: cleanString(place.amapPoiId, 80),
+    address: cleanString(place.address, 240),
+    district: cleanString(place.district, 60),
+    metroStation: cleanString(place.metroStation, 80),
+    metroMinutes: numberInRange(place.metroMinutes, 0, 90),
+    price: cleanString(place.price, 60) || '待确认',
+    hours: cleanString(place.hours, 80) || '待确认',
+    quietLevel: numberInRange(place.quietLevel, 1, 5, 3),
+    wifi: cleanString(place.wifi, 60) || '待确认',
+    outlets: cleanString(place.outlets, 80) || '待确认',
+    callFriendly: bool(place.callFriendly),
+    unlimited: bool(place.unlimited),
+    free: bool(place.free),
+    featured: bool(place.featured),
+    verified: bool(place.verified),
+    lastVerified: cleanString(place.lastVerified, 20),
+    description: cleanString(place.description, 1600),
+    workModes: Array.isArray(place.workModes) ? place.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8) : [],
+    images: Array.isArray(place.images) ? place.images.slice(0, 8) : []
+  };
+}
+
+function applyEditablePlaceFields(place, body) {
+  const editable = ['name', 'address', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
+  for (const key of editable) if (key in body) place[key] = cleanString(body[key], key === 'description' ? 1600 : 240);
+  if (categoryLabels[body.category]) place.category = body.category;
+  if ('lng' in body) place.lng = numberInRange(body.lng, 118.3, 119.4, place.lng);
+  if ('lat' in body) place.lat = numberInRange(body.lat, 31.5, 32.6, place.lat);
+  if ('metroMinutes' in body) place.metroMinutes = numberInRange(body.metroMinutes, 0, 90, place.metroMinutes);
+  if ('quietLevel' in body) place.quietLevel = numberInRange(body.quietLevel, 1, 5, place.quietLevel);
+  for (const key of ['callFriendly', 'unlimited', 'free', 'featured', 'verified']) if (key in body) place[key] = bool(body[key]);
+  if (Array.isArray(body.workModes)) place.workModes = body.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8);
+  return place;
+}
+
+async function resolveEditedPlaceImages(body, currentImages = []) {
+  const existing = Array.isArray(currentImages) ? currentImages.slice(0, 8) : [];
+  const requestedKeeps = Array.isArray(body.keepImages) ? body.keepImages : existing;
+  const kept = [...new Set(requestedKeeps.map((item) => cleanString(item, 300)).filter((item) => existing.includes(item)))].slice(0, 8);
+  const incoming = Array.isArray(body.photos) ? body.photos.slice(0, Math.max(0, 8 - kept.length)) : [];
+  const saved = [];
+  try {
+    for (const photo of incoming) {
+      const imageUrl = await saveImage(photo);
+      if (imageUrl) saved.push(imageUrl);
+    }
+  } catch (error) {
+    for (const imageUrl of saved) deleteMediaByUrl(imageUrl);
+    throw error;
+  }
+  return {
+    images: [...kept, ...saved].slice(0, 8),
+    newImages: saved,
+    removedImages: existing.filter((item) => !kept.includes(item))
+  };
+}
+
 async function normalizeSubmission(body, user = null, db = { places: [] }) {
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 8) : [];
   const savedPhotos = [];
@@ -1238,7 +1301,7 @@ function mergeCandidatePlaces(db, rows, { removeDemo = true } = {}) {
       lastVerified: '',
       description: '基础收录：由高德地点检索预录。营业时间、Wi-Fi、插座、安静程度和长时间办公友好度均需实地验证。',
       workModes: ['待实地验证'],
-      images: [],
+      images: imagePlan.images,
       isDemo: false,
       source: 'amap_candidate',
       sourceQuery,
@@ -1513,7 +1576,7 @@ async function handleApi(req, res, url) {
         contributors: db.contributors.filter((item) => item.active !== false).length
       },
       submissions: submissions.slice(0, 100),
-      places: user.role === 'admin' ? db.places.filter((item) => !item.archived) : [],
+      places: db.places.filter((item) => !item.archived).map((item) => user.role === 'admin' ? item : publicPlace(item)),
       contributors: user.role === 'admin' ? db.contributors.map(({ passwordHash, passwordSalt, ...safe }) => safe) : []
     });
   }
@@ -1584,26 +1647,45 @@ async function handleApi(req, res, url) {
     submission.reviewedBy = user.email;
 
     let place = null;
+    let mediaToDelete = [];
     if (nextStatus === 'approved') {
-      place = db.places.find((item) => item.sourceSubmissionId === submission.id);
-      if (!place) {
-        place = submissionToPlace(submission, {
-          featured: body.featured,
-          verified: body.verified,
-          workModes: body.workModes,
-          description: body.description
-        });
-        db.places.unshift(place);
-      } else {
-        place.featured = bool(body.featured);
-        place.verified = bool(body.verified);
-        place.workModes = Array.isArray(body.workModes) ? body.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8) : place.workModes;
+      if (submission.submissionKind === 'place_update') {
+        place = db.places.find((item) => item.id === submission.targetPlaceId && !item.archived);
+        if (!place) return json(res, 404, { error: '要修改的已发布地点不存在或已下架。' });
+        const previousImages = Array.isArray(place.images) ? [...place.images] : [];
+        const proposed = submission.proposedPlace || {};
+        applyEditablePlaceFields(place, proposed);
+        if ('featured' in body) place.featured = bool(body.featured);
+        if ('verified' in body) place.verified = bool(body.verified);
+        if (Array.isArray(body.workModes)) place.workModes = body.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8);
         if (cleanString(body.description, 1600)) place.description = cleanString(body.description, 1600);
+        place.images = Array.isArray(proposed.images) ? proposed.images.slice(0, 8) : (submission.images || []).slice(0, 8);
+        place.lastEditedBy = submission.submitterEmail;
+        place.lastEditedAt = new Date().toISOString();
         place.updatedAt = new Date().toISOString();
+        mediaToDelete = previousImages.filter((item) => !place.images.includes(item));
+      } else {
+        place = db.places.find((item) => item.sourceSubmissionId === submission.id);
+        if (!place) {
+          place = submissionToPlace(submission, {
+            featured: body.featured,
+            verified: body.verified,
+            workModes: body.workModes,
+            description: body.description
+          });
+          db.places.unshift(place);
+        } else {
+          place.featured = bool(body.featured);
+          place.verified = bool(body.verified);
+          place.workModes = Array.isArray(body.workModes) ? body.workModes.map((item) => cleanString(item, 40)).filter(Boolean).slice(0, 8) : place.workModes;
+          if (cleanString(body.description, 1600)) place.description = cleanString(body.description, 1600);
+          place.updatedAt = new Date().toISOString();
+        }
       }
     }
 
     if (nextStatus === 'merged') {
+      if (submission.submissionKind === 'place_update') return json(res, 400, { error: '地点修改不能合并，请选择通过、补充或拒绝。' });
       const mergePlaceId = cleanString(body.mergePlaceId, 100);
       place = db.places.find((item) => item.id === mergePlaceId && !item.archived);
       if (!place) return json(res, 400, { error: '请选择一个已有地点进行合并。' });
@@ -1638,13 +1720,78 @@ async function handleApi(req, res, url) {
 
     db.auditLog.unshift({ id: id('log'), action: `submission_${nextStatus}`, actor: user.email, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
+    for (const imageUrl of mediaToDelete) deleteMediaByUrl(imageUrl);
     return json(res, 200, { ok: true, submission, place: place ? publicPlace(place) : null });
+  }
+
+  const portalPlaceMatch = /^\/api\/portal\/places\/([^/]+)$/.exec(url.pathname);
+  if (portalPlaceMatch && req.method === 'PATCH') {
+    const user = requireRole(req, res, ['admin', 'contributor']);
+    if (!user) return;
+    const body = await parseBody(req);
+    const db = readDb();
+    const place = db.places.find((item) => item.id === portalPlaceMatch[1] && !item.archived);
+    if (!place) return json(res, 404, { error: '未找到地点。' });
+
+    const imagePlan = await resolveEditedPlaceImages(body, place.images || []);
+    const proposed = editablePlaceSnapshot(place);
+    applyEditablePlaceFields(proposed, body);
+    proposed.images = imagePlan.images;
+    if (!proposed.name || !proposed.address || proposed.lng === null || proposed.lat === null) {
+      for (const imageUrl of imagePlan.newImages) deleteMediaByUrl(imageUrl);
+      return json(res, 400, { error: '请通过地图确认地点名称、地址和精确位置。' });
+    }
+
+    if (user.role === 'admin') {
+      const oldImages = Array.isArray(place.images) ? [...place.images] : [];
+      applyEditablePlaceFields(place, proposed);
+      place.images = proposed.images;
+      place.updatedAt = new Date().toISOString();
+      db.auditLog.unshift({ id: id('log'), action: 'place_updated', actor: user.email, targetId: place.id, createdAt: new Date().toISOString() });
+      writeDb(db);
+      for (const imageUrl of oldImages.filter((item) => !place.images.includes(item))) deleteMediaByUrl(imageUrl);
+      return json(res, 200, { ok: true, mode: 'published', place: publicPlace(place) });
+    }
+
+    const submission = {
+      id: id('sub'),
+      status: 'pending',
+      submissionKind: 'place_update',
+      targetPlaceId: place.id,
+      targetPlaceName: place.name,
+      submitterType: 'contributor',
+      submitterEmail: user.email,
+      submitterName: user.name || user.email,
+      name: proposed.name,
+      category: proposed.category,
+      address: proposed.address,
+      district: proposed.district,
+      lng: proposed.lng,
+      lat: proposed.lat,
+      amapPoiId: proposed.amapPoiId,
+      description: proposed.description,
+      images: proposed.images,
+      newImages: imagePlan.newImages,
+      originalImages: Array.isArray(place.images) ? [...place.images] : [],
+      proposedPlace: proposed,
+      suggestedTags: proposed.workModes,
+      confidence: { score: 90, label: '受邀贡献者修改' },
+      duplicateMatches: [],
+      reviewNote: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    db.submissions.unshift(submission);
+    db.auditLog.unshift({ id: id('log'), action: 'place_update_submitted', actor: user.email, targetId: place.id, submissionId: submission.id, createdAt: new Date().toISOString() });
+    writeDb(db);
+    return json(res, 202, { ok: true, mode: 'review', submissionId: submission.id, message: '修改已提交，等待管理员审核。' });
   }
 
   if (url.pathname === '/api/admin/places' && req.method === 'POST') {
     const user = requireRole(req, res, ['admin']);
     if (!user) return;
     const body = await parseBody(req);
+    const imagePlan = await resolveEditedPlaceImages(body, []);
     const place = {
       id: id('place'),
       name: cleanString(body.name, 120),
@@ -1675,6 +1822,7 @@ async function handleApi(req, res, url) {
       updatedAt: new Date().toISOString()
     };
     if (!place.name || !place.address || place.lng === null || place.lat === null) {
+      for (const imageUrl of imagePlan.newImages) deleteMediaByUrl(imageUrl);
       return json(res, 400, { error: '请通过地图确认地点名称、地址和精确位置。' });
     }
     const db = readDb();

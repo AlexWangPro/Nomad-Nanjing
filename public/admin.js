@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.1.0';
+import { mountLocationPicker } from './location-picker.js?v=3.2.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -11,7 +11,8 @@ const state = {
   portalPhotos: [],
   mapConfig: null,
   portalLocationPicker: null,
-  drawerLocationPicker: null
+  drawerLocationPicker: null,
+  placeEditorPhotos: []
 };
 
 const categoryLabel = {
@@ -70,6 +71,8 @@ function setAuthenticated(user) {
   $('#portalUserName').textContent = user.name || user.email;
   $('#portalUserRole').textContent = user.role === 'admin' ? '管理员' : '受邀贡献者';
   state.activeSection = user.role === 'admin' ? 'overview' : 'contribute';
+  $('#importCandidatesButton').hidden = user.role !== 'admin';
+  $('#newPlaceButton').hidden = user.role !== 'admin';
   renderNav();
 }
 
@@ -92,6 +95,7 @@ function renderNav() {
   ];
   const contributorItems = [
     ['contribute', '提交新地点'],
+    ['places', '维护已发布地点'],
     ['overview', '我的提交']
   ];
   const items = state.user.role === 'admin' ? adminItems : contributorItems;
@@ -133,7 +137,7 @@ function submissionRow(item, actionable = true) {
   const confidence = item.confidence?.label || '待判断';
   const duplicates = item.duplicateMatches?.length || 0;
   return `<div class="admin-row">
-    <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(categoryLabel[item.category] || '地点')} · ${escapeHtml(item.address)}</small></div>
+    <div><strong>${escapeHtml(item.name)}</strong><small>${item.submissionKind === 'place_update' ? '已发布地点修改' : escapeHtml(categoryLabel[item.category] || '地点')} · ${escapeHtml(item.address)}</small></div>
     <div><span class="status-pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel[item.status] || item.status)}</span><small>${escapeHtml(confidence)}${duplicates ? ` · ${duplicates} 个疑似重复` : ''}</small></div>
     <div><strong>${escapeHtml(item.submitterName || item.submitterEmail)}</strong><small>${new Date(item.createdAt).toLocaleString('zh-CN')}</small></div>
     <div class="row-actions">${actionable ? `<button class="small-button primary" type="button" data-review-submission="${escapeHtml(item.id)}">快速审核</button>` : `<button class="small-button" type="button" data-review-submission="${escapeHtml(item.id)}">查看详情</button>`}</div>
@@ -153,12 +157,14 @@ function wireSubmissionRows(root) {
 
 function renderPlaces() {
   const places = state.data.places || [];
+  const isAdmin = state.user?.role === 'admin';
+  const pendingTargets = new Set((state.data.submissions || []).filter((item) => item.submissionKind === 'place_update' && ['pending','needs_info','secondary_review'].includes(item.status)).map((item) => item.targetPlaceId));
   $('#placeAdminList').innerHTML = places.length ? places.map((place) => `
     <div class="admin-row">
       <div><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(categoryLabel[place.category] || '地点')} · ${escapeHtml(place.address)}</small></div>
-      <div><span class="status-pill ${place.verified ? 'approved' : 'pending'}">${place.verified ? '已验证' : '待验证'}</span><small>${place.isDemo ? '示例数据' : place.featured ? '编辑精选' : '普通收录'}</small></div>
+      <div><span class="status-pill ${place.verified ? 'approved' : 'pending'}">${place.verified ? '已验证' : '待验证'}</span><small>${pendingTargets.has(place.id) ? '已有修改待审核' : place.featured ? '编辑精选' : '普通收录'} · ${(place.images || []).length} 张图</small></div>
       <div><strong>${escapeHtml(place.metroStation || '未填写地铁')}</strong><small>${escapeHtml(place.lastVerified || '未确认')}</small></div>
-      <div class="row-actions"><button class="small-button primary" type="button" data-edit-place="${escapeHtml(place.id)}">编辑</button><button class="small-button danger" type="button" data-archive-place="${escapeHtml(place.id)}">下架</button></div>
+      <div class="row-actions"><button class="small-button primary" type="button" data-edit-place="${escapeHtml(place.id)}">${isAdmin ? '直接编辑' : '提交修改'}</button>${isAdmin ? `<button class="small-button danger" type="button" data-archive-place="${escapeHtml(place.id)}">下架</button>` : ''}</div>
     </div>
   `).join('') : '<div class="empty-state">暂无地点。</div>';
   $$('[data-edit-place]').forEach((button) => button.addEventListener('click', () => openPlaceEditor(button.dataset.editPlace)));
@@ -181,9 +187,9 @@ function renderContributors() {
 function renderAll() {
   renderStats();
   renderRecent();
+  renderPlaces();
   if (state.user.role === 'admin') {
     renderSubmissions();
-    renderPlaces();
     renderContributors();
   }
 }
@@ -233,9 +239,46 @@ function closeDrawer() {
   $('#drawerOverlay').classList.remove('open');
 }
 
+function openPlaceUpdateSubmission(item) {
+  const canModerate = state.user.role === 'admin';
+  const proposed = item.proposedPlace || item;
+  const current = state.data.places.find((place) => place.id === item.targetPlaceId);
+  const fieldRows = [
+    ['名称', current?.name, proposed.name],
+    ['地址', current?.address, proposed.address],
+    ['类型', categoryLabel[current?.category] || current?.category, categoryLabel[proposed.category] || proposed.category],
+    ['营业时间', current?.hours, proposed.hours],
+    ['消费', current?.price, proposed.price],
+    ['Wi-Fi', current?.wifi, proposed.wifi],
+    ['插座', current?.outlets, proposed.outlets],
+    ['地铁站', current?.metroStation, proposed.metroStation]
+  ].filter(([, before, after]) => String(before || '') !== String(after || ''));
+  openDrawer(`
+    <div class="drawer-header"><div><span class="eyebrow">PUBLISHED PLACE EDIT</span><h3>${escapeHtml(proposed.name || item.name)}</h3></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <span class="status-pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel[item.status] || item.status)}</span>
+    <div class="contributor-edit-note">${canModerate ? '通过后将直接替换当前公开信息和图片。' : '你的修改正在等待管理员审核，公开页面暂时不会变化。'}</div>
+    <div class="drawer-meta"><div><span>修改人</span><strong>${escapeHtml(item.submitterName || item.submitterEmail)}</strong></div><div><span>目标地点</span><strong>${escapeHtml(current?.name || item.targetPlaceName || '')}</strong></div><div><span>当前照片</span><strong>${current?.images?.length || 0} 张</strong></div><div><span>修改后照片</span><strong>${proposed.images?.length || 0} 张</strong></div></div>
+    ${fieldRows.length ? `<div class="place-change-list">${fieldRows.map(([label,before,after]) => `<div><span>${escapeHtml(label)}</span><small>${escapeHtml(before || '未填写')}</small><strong>→ ${escapeHtml(after || '未填写')}</strong></div>`).join('')}</div>` : '<div class="detail-footnote">主要修改集中在说明、标签或图片。</div>'}
+    <div class="detail-section"><h4>修改后的办公说明</h4><p>${escapeHtml(proposed.description || '未填写')}</p></div>
+    ${proposed.images?.length ? `<div class="drawer-images editable-review-images">${proposed.images.map((src,index) => `<a href="${escapeHtml(src)}" target="_blank"><img src="${escapeHtml(src)}" alt="修改后照片 ${index+1}" /></a>`).join('')}</div>` : '<div class="detail-footnote">修改后不保留任何照片。</div>'}
+    ${canModerate ? `<form class="admin-form" id="reviewForm" style="margin-top:20px">
+      <input name="description" type="hidden" value="${escapeHtml(proposed.description || '')}" />
+      <input name="lng" type="hidden" value="${proposed.lng ?? ''}" /><input name="lat" type="hidden" value="${proposed.lat ?? ''}" /><input name="address" type="hidden" value="${escapeHtml(proposed.address || '')}" /><input name="district" type="hidden" value="${escapeHtml(proposed.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(proposed.amapPoiId || '')}" />
+      ${(proposed.workModes || []).map((tag) => `<input type="checkbox" name="suggestedTag" value="${escapeHtml(tag)}" checked hidden />`).join('')}
+      <div class="check-row"><label class="check"><input name="featured" type="checkbox" ${proposed.featured ? 'checked' : ''}/><span>编辑精选</span></label><label class="check"><input name="verified" type="checkbox" ${proposed.verified ? 'checked' : ''}/><span>已验证</span></label></div>
+      <label><span>审核备注</span><textarea name="reviewNote" rows="3" placeholder="需要补充或拒绝时填写">${escapeHtml(item.reviewNote || '')}</textarea></label>
+      <div class="review-actions"><button class="primary-button approve" type="button" data-review-action="approved">批准并更新公开地点</button><button class="secondary-button" type="button" data-review-action="needs_info">需要补充</button><button class="secondary-button" type="button" data-review-action="secondary_review">待二次确认</button><button class="danger-button" type="button" data-review-action="rejected">拒绝修改</button></div>
+      <p class="form-feedback" id="reviewFeedback"></p>
+    </form>` : ''}
+  `);
+  $('[data-close-drawer]').addEventListener('click', closeDrawer);
+  if (canModerate) $$('[data-review-action]').forEach((button) => button.addEventListener('click', () => moderateSubmission(item.id, button.dataset.reviewAction)));
+}
+
 function openSubmission(id) {
   const item = state.data.submissions.find((submission) => submission.id === id);
   if (!item) return;
+  if (item.submissionKind === 'place_update') return openPlaceUpdateSubmission(item);
   const canModerate = state.user.role === 'admin';
   const confidenceScore = Number(item.confidence?.score || 0);
   const confidenceLabel = item.confidence?.label || '旧版提交，需人工判断';
@@ -366,23 +409,38 @@ function placeForm(place = {}) {
       <div class="form-grid three-col"><label><span>区域</span><input name="district" value="${escapeHtml(place.district || '')}" /></label><label><span>地铁站</span><input name="metroStation" value="${escapeHtml(place.metroStation || '')}" /></label><label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" value="${place.metroMinutes ?? ''}" /></label></div>
       <div class="form-grid two-col"><label><span>消费</span><input name="price" value="${escapeHtml(place.price || '')}" /></label><label><span>营业时间</span><input name="hours" value="${escapeHtml(place.hours || '')}" /></label></div>
       <div class="form-grid three-col"><label><span>安静程度</span><select name="quietLevel">${[5,4,3,2,1].map((n) => `<option value="${n}" ${Number(place.quietLevel || 3) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label><span>Wi-Fi</span><input name="wifi" value="${escapeHtml(place.wifi || '')}" /></label><label><span>插座</span><input name="outlets" value="${escapeHtml(place.outlets || '')}" /></label></div>
-      <div class="check-row"><label class="check"><input name="callFriendly" type="checkbox" ${place.callFriendly ? 'checked' : ''}/><span>适合通话</span></label><label class="check"><input name="unlimited" type="checkbox" ${place.unlimited ? 'checked' : ''}/><span>通常不限时</span></label><label class="check"><input name="free" type="checkbox" ${place.free ? 'checked' : ''}/><span>免费</span></label><label class="check"><input name="featured" type="checkbox" ${place.featured ? 'checked' : ''}/><span>编辑精选</span></label><label class="check"><input name="verified" type="checkbox" ${place.verified ? 'checked' : ''}/><span>已验证</span></label></div>
+      <div class="check-row"><label class="check"><input name="callFriendly" type="checkbox" ${place.callFriendly ? 'checked' : ''}/><span>适合通话</span></label><label class="check"><input name="unlimited" type="checkbox" ${place.unlimited ? 'checked' : ''}/><span>通常不限时</span></label><label class="check"><input name="free" type="checkbox" ${place.free ? 'checked' : ''}/><span>免费</span></label>${state.user?.role === 'admin' ? `<label class="check"><input name="featured" type="checkbox" ${place.featured ? 'checked' : ''}/><span>编辑精选</span></label><label class="check"><input name="verified" type="checkbox" ${place.verified ? 'checked' : ''}/><span>已验证</span></label>` : `<input name="featured" type="hidden" value="${place.featured ? 'true' : 'false'}" /><input name="verified" type="hidden" value="${place.verified ? 'true' : 'false'}" />`}</div>
       <label><span>最近确认日期</span><input name="lastVerified" type="date" value="${escapeHtml(place.lastVerified || '')}" /></label>
       <label><span>办公方式标签（逗号分隔）</span><input name="workModes" value="${escapeHtml((place.workModes || []).join(', '))}" /></label>
       <label><span>办公说明</span><textarea name="description" rows="6">${escapeHtml(place.description || '')}</textarea></label>
-      <div class="form-actions-inline"><button class="secondary-button" type="button" data-close-drawer>取消</button><button class="primary-button" type="submit">保存地点</button></div>
+      <section class="place-photo-editor">
+        <div class="photo-upload-heading"><div><strong>店面照片</strong><span>保留、删除或重新上传，最终最多 8 张。</span></div><span id="placePhotoCount">0 / 8</span></div>
+        <label class="photo-upload-button"><input id="placePhotoInput" type="file" accept="image/*" multiple /><span>添加照片</span></label>
+        <p class="photo-processing" id="placePhotoProcessing"></p>
+        <div class="photo-preview place-photo-preview" id="placePhotoPreview"></div>
+      </section>
+      <div class="form-actions-inline"><button class="secondary-button" type="button" data-close-drawer>取消</button><button class="primary-button" type="submit">${state.user?.role === 'admin' ? '保存并立即发布' : '提交修改审核'}</button></div>
       <p class="form-feedback" id="placeFeedback"></p>
     </form>`;
 }
 
 function openPlaceEditor(id = null) {
   const place = id ? state.data.places.find((item) => item.id === id) : null;
+  if (!place && state.user?.role !== 'admin') return;
+  state.placeEditorPhotos = (place?.images || []).map((url, index) => ({ id: `existing_${index}_${url}`, url, dataUrl: url, existing: true, size: null }));
   openDrawer(`
-    <div class="drawer-header"><div><span class="eyebrow">${place ? 'EDIT PLACE' : 'NEW PLACE'}</span><h3>${place ? escapeHtml(place.name) : '新增地点'}</h3></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="drawer-header"><div><span class="eyebrow">${place ? (state.user?.role === 'admin' ? 'EDIT PLACE' : 'SUGGEST EDIT') : 'NEW PLACE'}</span><h3>${place ? escapeHtml(place.name) : '新增地点'}</h3></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    ${state.user?.role === 'contributor' ? '<div class="contributor-edit-note">你的修改不会立即覆盖公开页面，管理员审核通过后才会发布。</div>' : ''}
     ${placeForm(place || {})}
   `);
   $$('[data-close-drawer]').forEach((button) => button.addEventListener('click', closeDrawer));
   $('#placeForm').addEventListener('submit', (event) => savePlace(event, id));
+  $('#placePhotoInput').addEventListener('change', handlePlaceEditorPhotos);
+  $('#placePhotoPreview').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-place-photo-remove]');
+    if (button) removePlaceEditorPhoto(button.dataset.placePhotoRemove);
+  });
+  renderPlaceEditorPhotoPreview();
   requestAnimationFrame(() => mountDrawerLocationPicker($('#placeLocationPicker'), {
     name: place?.name, address: place?.address, district: place?.district, lng: place?.lng, lat: place?.lat, poiId: place?.amapPoiId
   }).catch((error) => feedback($('#placeFeedback'), `位置选择器加载失败：${error.message}`, 'error')));
@@ -399,13 +457,18 @@ async function savePlace(event, id) {
   }
   if (payload.addressDetail?.trim()) payload.address = `${payload.address} · ${payload.addressDetail.trim()}`;
   delete payload.addressDetail;
-  for (const key of ['callFriendly','unlimited','free','featured','verified']) payload[key] = form.elements[key].checked;
+  for (const key of ['callFriendly','unlimited','free']) payload[key] = form.elements[key].checked;
+  payload.featured = form.elements.featured.type === 'checkbox' ? form.elements.featured.checked : form.elements.featured.value === 'true';
+  payload.verified = form.elements.verified.type === 'checkbox' ? form.elements.verified.checked : form.elements.verified.value === 'true';
   payload.workModes = String(fd.get('workModes') || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  payload.keepImages = state.placeEditorPhotos.filter((photo) => photo.existing).map((photo) => photo.url);
+  payload.photos = state.placeEditorPhotos.filter((photo) => !photo.existing).map((photo) => photo.dataUrl);
   const node = $('#placeFeedback');
-  feedback(node, '正在保存…');
+  feedback(node, state.user?.role === 'admin' ? '正在保存…' : '正在提交修改…');
   try {
-    await api(id ? `/api/admin/places/${encodeURIComponent(id)}` : '/api/admin/places', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
-    feedback(node, '保存成功。', 'success');
+    const endpoint = id ? `/api/portal/places/${encodeURIComponent(id)}` : '/api/admin/places';
+    const result = await api(endpoint, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+    feedback(node, result.mode === 'review' ? '修改已提交，等待管理员审核。' : '保存成功。', 'success');
     await refreshData();
     setTimeout(closeDrawer, 500);
   } catch (error) {
@@ -610,6 +673,53 @@ function removePortalPhoto(photoId) {
   state.portalPhotos = state.portalPhotos.filter((photo) => photo.id !== photoId);
   renderPortalPhotoPreview();
   $('#portalPhotoProcessing').textContent = state.portalPhotos.length ? '可以继续添加或删除图片。' : '';
+}
+
+function renderPlaceEditorPhotoPreview() {
+  const count = $('#placePhotoCount');
+  const preview = $('#placePhotoPreview');
+  if (!count || !preview) return;
+  count.textContent = `${state.placeEditorPhotos.length} / ${MAX_PORTAL_PHOTOS}`;
+  if (!state.placeEditorPhotos.length) {
+    preview.innerHTML = '<span class="photo-empty">当前没有照片，可以重新上传。</span>';
+    return;
+  }
+  preview.innerHTML = state.placeEditorPhotos.map((photo, index) => `
+    <figure class="photo-item">
+      <img src="${escapeHtml(photo.dataUrl)}" alt="店面照片 ${index + 1}" />
+      <button type="button" class="photo-remove" data-place-photo-remove="${escapeHtml(photo.id)}" aria-label="删除第 ${index + 1} 张图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <figcaption>${photo.existing ? '已发布 · 点击删除' : `${Math.ceil(photo.size / 1024)}KB · 新图片`}</figcaption>
+    </figure>
+  `).join('');
+}
+
+async function handlePlaceEditorPhotos(event) {
+  const input = event.target;
+  const available = MAX_PORTAL_PHOTOS - state.placeEditorPhotos.length;
+  const selected = [...input.files];
+  input.value = '';
+  if (!selected.length) return;
+  if (available <= 0) return feedback($('#placeFeedback'), '最多保留 8 张图片，请先删除后再上传。', 'error');
+  const files = selected.slice(0, available);
+  const processing = $('#placePhotoProcessing');
+  for (let index = 0; index < files.length; index += 1) {
+    processing.textContent = `正在处理图片：${index + 1} / ${files.length}`;
+    try {
+      const photo = await compressPortalPhoto(files[index]);
+      state.placeEditorPhotos.push({ ...photo, existing: false, url: '' });
+      renderPlaceEditorPhotoPreview();
+    } catch (error) {
+      feedback($('#placeFeedback'), error.message, 'error');
+    }
+  }
+  processing.textContent = '可以继续添加、删除或重新上传。';
+}
+
+function removePlaceEditorPhoto(photoId) {
+  state.placeEditorPhotos = state.placeEditorPhotos.filter((photo) => photo.id !== photoId);
+  renderPlaceEditorPhotoPreview();
+  const processing = $('#placePhotoProcessing');
+  if (processing) processing.textContent = '保存后，被删除的照片才会从公开页面移除。';
 }
 
 function syncPortalLocationFields(form) {
