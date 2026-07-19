@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.2.0';
+import { mountLocationPicker } from './location-picker.js?v=3.3.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -520,7 +520,7 @@ function validateSubmissionStep(step) {
 
 const MAX_PHOTOS = 8;
 const TARGET_PHOTO_BYTES = 300 * 1024;
-const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 35 * 1024 * 1024;
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -557,14 +557,16 @@ function canvasToBlob(canvas, quality) {
 
 async function compressPhoto(file) {
   if (!file.type.startsWith('image/')) throw new Error(`${file.name} 不是图片文件`);
-  if (file.size > MAX_SOURCE_BYTES) throw new Error(`${file.name} 超过 20MB，请先裁剪后重试`);
+  if (file.size > MAX_SOURCE_BYTES) throw new Error(`${file.name} 超过 35MB，请换一张照片`);
 
   const source = await decodeImage(file);
   const sourceWidth = source.naturalWidth || source.width;
   const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720, 600];
-  const qualities = [0.88, 0.82, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46, 0.40];
+  const dimensions = [1600, 1440, 1280, 1120, 960, 840, 720, 640, 560, 480, 400, 320, 256];
+  const qualities = [0.82, 0.74, 0.66, 0.58, 0.50, 0.44, 0.38, 0.32, 0.27, 0.23, 0.20, 0.16];
   let smallest = null;
+  let smallestWidth = 0;
+  let smallestHeight = 0;
 
   try {
     for (const maxDimension of dimensions) {
@@ -575,13 +577,19 @@ async function compressPhoto(file) {
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext('2d', { alpha: false });
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
       context.fillStyle = '#fff';
       context.fillRect(0, 0, width, height);
       context.drawImage(source, 0, 0, width, height);
 
       for (const quality of qualities) {
         const blob = await canvasToBlob(canvas, quality);
-        if (!smallest || blob.size < smallest.size) smallest = blob;
+        if (!smallest || blob.size < smallest.size) {
+          smallest = blob;
+          smallestWidth = width;
+          smallestHeight = height;
+        }
         if (blob.size <= TARGET_PHOTO_BYTES) {
           return {
             id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -594,6 +602,22 @@ async function compressPhoto(file) {
         }
       }
     }
+
+    // Final automatic fallback for unusually detailed/noisy photos.
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, 192 / Math.max(sourceWidth, sourceHeight));
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const fallback = await canvasToBlob(canvas, 0.12);
+    if (!smallest || fallback.size < smallest.size) {
+      smallest = fallback;
+      smallestWidth = canvas.width;
+      smallestHeight = canvas.height;
+    }
   } finally {
     source.close?.();
   }
@@ -604,11 +628,11 @@ async function compressPhoto(file) {
       dataUrl: await blobToDataUrl(smallest),
       size: smallest.size,
       originalName: file.name,
-      width: 0,
-      height: 0
+      width: smallestWidth,
+      height: smallestHeight
     };
   }
-  throw new Error(`${file.name} 无法压缩到约 300KB 内，请换一张或先裁剪`);
+  throw new Error(`${file.name} 处理失败，请重新选择后再试`);
 }
 
 function renderPhotoPreview() {
@@ -656,7 +680,7 @@ async function handlePhotos(event) {
     }
   }
 
-  processing.textContent = added ? `已添加 ${added} 张，均已转成高清 WebP。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，均已转成 WebP 并压缩完成。` : '';
   if (errors.length) showToast(errors[0]);
 }
 

@@ -868,7 +868,7 @@ body.admin-page { overflow: auto; background: #eef1ed; }
   .detail-photo::after { display: none; }
 }
 
-/* v3.2 published place editing */
+/* v3.3 published place editing */
 .contributor-edit-note { margin: 0 0 16px; padding: 12px 14px; border: 1px solid rgba(31,107,82,.18); border-radius: 14px; background: rgba(31,107,82,.07); color: #35594b; font-size: 12px; line-height: 1.55; }
 .place-photo-editor { margin: 4px 0 2px; padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: #f8faf8; }
 .place-photo-preview { grid-template-columns: repeat(3,minmax(0,1fr)); }

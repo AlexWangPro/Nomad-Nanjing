@@ -7,7 +7,7 @@
   <meta name="description" content="南京数字游民办公地图审核与贡献者后台" />
   <title>南京数字游民办公地图 · 管理后台</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=3.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.3.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -115,7 +115,7 @@
                 </div>
                 <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="4" placeholder="只写地图和选项没有覆盖的内容。"></textarea></label>
                 <div class="upload-field">
-                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转成高清 WebP，每张控制在约 300KB 内。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
+                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转为 WebP 并智能压缩至约 150KB，无需手动裁剪。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
                   <input id="portalPhotoInput" type="file" accept="image/*" multiple hidden />
                   <label class="photo-picker-button" for="portalPhotoInput"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>从手机相册多选图片</span></label>
                   <p class="photo-processing" id="portalPhotoProcessing" role="status"></p>
@@ -136,6 +136,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=3.2.0"></script>
+  <script type="module" src="/admin.js?v=3.3.0"></script>
 </body>
 </html>

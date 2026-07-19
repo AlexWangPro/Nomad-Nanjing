@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -765,34 +765,49 @@ function verifyPassword(password, salt, hash) {
   return safeEqual(derived, hash);
 }
 
-async function convertToWebpUnderLimit(buffer, targetBytes = 300 * 1024) {
-  const dimensions = [1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720, 600];
-  const qualities = [88, 82, 76, 70, 64, 58, 52, 46, 40];
+async function convertToWebpUnderLimit(buffer, targetBytes = 150 * 1024) {
+  // Mobile photos can be very large and visually complex. Progressively reduce
+  // both dimensions and quality until the WebP fits; users never need to crop.
+  const dimensions = [1600, 1440, 1280, 1120, 960, 840, 720, 640, 560, 480, 400, 320, 256];
+  const qualities = [82, 74, 66, 58, 50, 44, 38, 32, 27, 23, 20, 16];
   let smallest = null;
 
   for (const dimension of dimensions) {
-    const base = sharp(buffer, { failOn: 'error', limitInputPixels: 50_000_000 })
+    const base = sharp(buffer, { failOn: 'error', limitInputPixels: 80_000_000 })
       .rotate()
+      .flatten({ background: '#ffffff' })
       .resize({
         width: dimension,
         height: dimension,
         fit: 'inside',
-        withoutEnlargement: true
+        withoutEnlargement: true,
+        fastShrinkOnLoad: true
       });
 
     for (const quality of qualities) {
       const output = await base.clone().webp({
         quality,
         effort: 4,
-        smartSubsample: true
+        smartSubsample: true,
+        alphaQuality: Math.max(20, quality)
       }).toBuffer();
       if (!smallest || output.length < smallest.length) smallest = output;
       if (output.length <= targetBytes) return output;
     }
   }
 
+  // Extremely noisy images are given one final tiny fallback rather than
+  // asking the user to crop them manually.
+  const fallback = await sharp(buffer, { failOn: 'error', limitInputPixels: 80_000_000 })
+    .rotate()
+    .flatten({ background: '#ffffff' })
+    .resize({ width: 192, height: 192, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 12, effort: 6, smartSubsample: true })
+    .toBuffer();
+  if (!smallest || fallback.length < smallest.length) smallest = fallback;
   if (smallest && smallest.length <= targetBytes) return smallest;
-  throw Object.assign(new Error('图片内容过于复杂，无法压缩到约 300KB 内。请换一张或先裁剪后重试。'), { statusCode: 413 });
+
+  throw Object.assign(new Error('这张图片处理失败，请重新选择后再试。'), { statusCode: 413 });
 }
 
 async function saveImage(dataUrl) {
@@ -800,8 +815,8 @@ async function saveImage(dataUrl) {
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
   if (!match) throw Object.assign(new Error('仅支持 JPG、PNG 或 WebP 图片。'), { statusCode: 400 });
   const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 12 * 1024 * 1024) {
-    throw Object.assign(new Error('单张原始图片不能超过 12MB。'), { statusCode: 413 });
+  if (buffer.length > 35 * 1024 * 1024) {
+    throw Object.assign(new Error('单张原始图片不能超过 35MB。'), { statusCode: 413 });
   }
 
   let webp;

@@ -7,7 +7,7 @@
   <meta name="description" content="南京适合电脑办公、远程工作与数字游民使用的精选地点地图。" />
   <title>南京数字游民办公地图</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=3.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.3.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -160,7 +160,7 @@
         <label><span>其他注意事项（选填）</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：店员确认可以长时间使用电脑。"></textarea></label>
         <div class="upload-field">
           <div class="upload-heading">
-            <div><strong>现场图片（选填）</strong><span>最多 8 张；自动转成高清 WebP，每张控制在约 300KB 内。</span></div>
+            <div><strong>现场图片（选填）</strong><span>最多 8 张；自动转为 WebP 并智能压缩至约 150KB，无需手动裁剪。</span></div>
             <span class="photo-count" id="photoCount">0 / 8</span>
           </div>
           <input id="photoInput" name="photos" type="file" accept="image/*" multiple hidden />
@@ -247,6 +247,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.2.0"></script>
+  <script type="module" src="/app.js?v=3.3.0"></script>
 </body>
 </html>
