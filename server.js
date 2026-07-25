@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.6.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -1272,7 +1272,8 @@ function normalizeAmapPoi(poi) {
     lat,
     type: cleanString(poi.type, 200),
     typecode: cleanString(poi.typecode, 30),
-    tel: amapText(poi.tel)
+    tel: amapText(poi.tel),
+    distance: Number.isFinite(Number(poi.distance)) ? Number(poi.distance) : null
   };
 }
 
@@ -1282,6 +1283,18 @@ async function searchAmapPlaces(query, { city = '南京', limit = 10 } = {}) {
     city,
     citylimit: 'true',
     offset: Math.max(1, Math.min(20, Number(limit) || 10)),
+    page: 1,
+    extensions: 'all'
+  });
+  return (Array.isArray(payload.pois) ? payload.pois : []).map(normalizeAmapPoi).filter(Boolean);
+}
+
+async function searchAmapNearby(lng, lat, { radius = 1200, limit = 12 } = {}) {
+  const payload = await amapRestRequest('/v3/place/around', {
+    location: `${Number(lng).toFixed(6)},${Number(lat).toFixed(6)}`,
+    radius: Math.max(100, Math.min(3000, Number(radius) || 1200)),
+    sortrule: 'distance',
+    offset: Math.max(1, Math.min(20, Number(limit) || 12)),
     page: 1,
     extensions: 'all'
   });
@@ -1469,6 +1482,21 @@ async function handleApi(req, res, url) {
     try {
       const places = await searchAmapPlaces(query, { city, limit });
       return json(res, 200, { ok: true, query, places });
+    } catch (error) {
+      return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
+    }
+  }
+
+  if (url.pathname === '/api/amap/around' && req.method === 'GET') {
+    if (rateLimited(req, 'amap-around', 80, 60 * 1000)) return json(res, 429, { error: '周边地点搜索过于频繁，请稍后再试。' });
+    const lng = numberInRange(url.searchParams.get('lng'), 118.3, 119.4);
+    const lat = numberInRange(url.searchParams.get('lat'), 31.5, 32.6);
+    const radius = numberInRange(url.searchParams.get('radius') || 1200, 100, 3000, 1200);
+    const limit = numberInRange(url.searchParams.get('limit') || 12, 1, 20, 12);
+    if (lng === null || lat === null) return json(res, 400, { error: '无效的南京位置。' });
+    try {
+      const places = await searchAmapNearby(lng, lat, { radius, limit });
+      return json(res, 200, { ok: true, center: { lng, lat }, places });
     } catch (error) {
       return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
     }

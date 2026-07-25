@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.5.0';
+import { mountLocationPicker } from './location-picker.js?v=3.6.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -782,6 +782,8 @@ function openReviewModal(place) {
   const feedback = $('#reviewFeedback');
   feedback.textContent = '';
   feedback.className = 'form-feedback';
+  const hint = $('#reviewRatingHint');
+  if (hint) hint.textContent = '点击星星评分';
   openModal('reviewModal');
 }
 
@@ -1047,6 +1049,18 @@ function wireEvents() {
   });
   $('#submissionForm').addEventListener('submit', submitPlace);
   $('#reviewForm').addEventListener('submit', submitReview);
+  $('#reviewForm').addEventListener('change', (event) => {
+    if (event.target.name !== 'rating') return;
+    const ratingCopy = {
+      1: '不太适合办公',
+      2: '勉强可用',
+      3: '基本合格',
+      4: '值得推荐',
+      5: '非常适合办公'
+    };
+    const hint = $('#reviewRatingHint');
+    if (hint) hint.textContent = `${event.target.value} 星 · ${ratingCopy[event.target.value] || ''}`;
+  });
   $$('[data-submit-next]').forEach((button) => button.addEventListener('click', () => { if (validateSubmissionStep(state.submissionStep)) setSubmissionStep(state.submissionStep + 1); }));
   $$('[data-submit-back]').forEach((button) => button.addEventListener('click', () => setSubmissionStep(state.submissionStep - 1)));
   $('#submissionForm').addEventListener('change', () => { if (state.submissionStep === 3) updateSubmissionSummary(); });

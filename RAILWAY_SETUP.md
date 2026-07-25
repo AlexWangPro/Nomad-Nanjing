@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.5 Railway 部署说明
+# Nomad Nanjing v3.6 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.5 之前：
+在部署 v3.6 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -23,11 +23,11 @@ RAILWAY_VOLUME_MOUNT_PATH=/data
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.5 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v3.6 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
-git commit -m "Add manual map marking and moderated reviews"
+git commit -m "Redesign reviews and add nearby location picker"
 git push
 ```
 
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.5.0",
+  "version": "3.6.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -136,6 +136,6 @@ storage.persistentVolume = true
 
 部署后检查 `/manifest.webmanifest`、`/logo.svg` 和 `/icons/icon-512.png`。无需新增 Railway 环境变量。
 
-## v3.5 说明
+## v3.6 说明
 
 本次升级不需要新增环境变量。地点与点评数据继续保存在现有 Railway Volume 的 SQLite 数据库中。

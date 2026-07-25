@@ -84,6 +84,35 @@ function getLngLat(location) {
   return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
 }
 
+function formatDistance(value) {
+  const distance = Number(value);
+  if (!Number.isFinite(distance)) return '';
+  return distance < 1000 ? `${Math.max(1, Math.round(distance))}m` : `${(distance / 1000).toFixed(distance >= 10000 ? 0 : 1)}km`;
+}
+
+function loadAmapPlugin(AMap, pluginName, timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('定位组件加载超时'));
+    }, timeoutMs);
+    try {
+      AMap.plugin([pluginName], () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve();
+      });
+    } catch (error) {
+      settled = true;
+      window.clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
 function setField(root, name, value) {
   const field = root.querySelector(`[name="${name}"]`);
   if (!field) return;
@@ -125,6 +154,41 @@ export async function mountLocationPicker({
     throw new Error('位置选择器页面结构不完整，请刷新后重试');
   }
 
+  root.querySelectorAll('[data-location-generated]').forEach((node) => node.remove());
+  let mapShell = mapNode.closest('.location-map-shell');
+  if (!mapShell) {
+    mapShell = document.createElement('div');
+    mapShell.className = 'location-map-shell';
+    mapNode.parentNode.insertBefore(mapShell, mapNode);
+    mapShell.appendChild(mapNode);
+  }
+
+  const mapTools = document.createElement('div');
+  mapTools.className = 'location-map-tools';
+  mapTools.dataset.locationGenerated = 'true';
+  mapTools.innerHTML = `
+    <button type="button" class="location-map-tool primary" data-location-locate aria-label="定位到我的位置">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>定位到我</span>
+    </button>
+    <button type="button" class="location-map-tool" data-location-nearby aria-label="搜索地图中心周边地点">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg><span>此处周边</span>
+    </button>`;
+  mapShell.appendChild(mapTools);
+
+  const nearbyPanel = document.createElement('section');
+  nearbyPanel.className = 'location-nearby-panel';
+  nearbyPanel.dataset.locationGenerated = 'true';
+  nearbyPanel.hidden = true;
+  nearbyPanel.innerHTML = `
+    <div class="location-nearby-heading"><div><strong>周边地点</strong><span>点击任一地点，自动放置地点戳并作为地址。</span></div><button type="button" data-location-nearby-close aria-label="收起周边地点">收起</button></div>
+    <div class="location-nearby-list" data-location-nearby-list></div>`;
+  mapShell.insertAdjacentElement('afterend', nearbyPanel);
+
+  const locateButton = mapTools.querySelector('[data-location-locate]');
+  const nearbyButton = mapTools.querySelector('[data-location-nearby]');
+  const nearbyList = nearbyPanel.querySelector('[data-location-nearby-list]');
+  const nearbyCloseButton = nearbyPanel.querySelector('[data-location-nearby-close]');
+
   const AMap = await ensureAmap(amapKey);
 
   const initialLng = Number(initial.lng);
@@ -151,6 +215,26 @@ export async function mountLocationPicker({
     content: '<div class="location-picker-pin"><span></span></div>'
   });
   map.add(marker);
+
+  const userLocationMarker = new AMap.Marker({
+    position: center,
+    visible: false,
+    anchor: 'center',
+    zIndex: 120,
+    content: '<div class="location-user-dot"><span></span></div>'
+  });
+  const accuracyCircle = new AMap.Circle({
+    center,
+    radius: 0,
+    visible: false,
+    strokeColor: '#2879d0',
+    strokeOpacity: 0.35,
+    strokeWeight: 1,
+    fillColor: '#5aa7f0',
+    fillOpacity: 0.12,
+    zIndex: 20
+  });
+  map.add([accuracyCircle, userLocationMarker]);
 
   let current = {
     name: text(initial.name || customNameInput?.value),
@@ -223,6 +307,110 @@ export async function mountLocationPicker({
     if (!meta.address || !meta.district) await reverseGeocode(point, true);
   }
 
+  function renderNearbyResults(places) {
+    const usable = (places || []).filter((place) => Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat))).slice(0, 12);
+    nearbyPanel.hidden = false;
+    if (!usable.length) {
+      nearbyList.innerHTML = '<div class="location-nearby-empty">附近暂时没有可选地点。你仍然可以直接点击地图并填写店名。</div>';
+      return;
+    }
+    nearbyList.innerHTML = usable.map((place, index) => `
+      <button type="button" class="location-nearby-item" data-location-nearby-item="${index}">
+        <span class="location-nearby-pin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg></span>
+        <span class="location-nearby-copy"><strong>${escapeHtml(place.name || '未命名地点')}</strong><small>${escapeHtml([place.district, place.address].filter(Boolean).join(' · ') || '南京市')}</small></span>
+        ${Number.isFinite(Number(place.distance)) ? `<em>${escapeHtml(formatDistance(place.distance))}</em>` : ''}
+      </button>`).join('');
+    nearbyList.querySelectorAll('[data-location-nearby-item]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const place = usable[Number(button.dataset.locationNearbyItem)];
+        if (!place) return;
+        searchInput.value = place.name || '';
+        statusNode.textContent = `已选择周边地点“${place.name || '未命名地点'}”，正在放置地点戳…`;
+        await chooseLocation([Number(place.lng), Number(place.lat)], {
+          name: place.name,
+          address: place.address,
+          district: place.district,
+          poiId: place.id
+        });
+        statusNode.textContent = '地点戳与地址已确认，可拖动微调。';
+        nearbyPanel.hidden = true;
+      });
+    });
+  }
+
+  async function loadNearby(point, label = '这个位置') {
+    const target = getLngLat(point);
+    if (!target) return;
+    nearbyPanel.hidden = false;
+    nearbyList.innerHTML = '<div class="location-nearby-loading"><span></span>正在查找周边地点…</div>';
+    try {
+      const payload = await apiJson(`/api/amap/around?lng=${encodeURIComponent(target[0])}&lat=${encodeURIComponent(target[1])}&radius=1200&limit=12`);
+      if (destroyed) return;
+      renderNearbyResults(payload.places || []);
+      statusNode.textContent = payload.places?.length
+        ? `${label}附近找到 ${payload.places.length} 个地点，点击即可作为地址。`
+        : `${label}附近没有可选地点，可以直接点击地图标注。`;
+    } catch (error) {
+      nearbyList.innerHTML = `<div class="location-nearby-empty">周边地点加载失败：${escapeHtml(error.message)}</div>`;
+      statusNode.textContent = `周边地点加载失败：${error.message}`;
+    }
+  }
+
+  function showUserLocation(point, accuracy = 0) {
+    userLocationMarker.setPosition(point);
+    userLocationMarker.show();
+    if (Number.isFinite(Number(accuracy)) && Number(accuracy) > 0) {
+      accuracyCircle.setCenter(point);
+      accuracyCircle.setRadius(Math.min(1500, Math.max(20, Number(accuracy))));
+      accuracyCircle.show();
+    } else {
+      accuracyCircle.hide();
+    }
+  }
+
+  async function getPreciseLocation() {
+    await loadAmapPlugin(AMap, 'AMap.Geolocation');
+    return new Promise((resolve, reject) => {
+      const geolocation = new AMap.Geolocation({
+        enableHighAccuracy: true,
+        timeout: 12000,
+        noIpLocate: 0,
+        noGeoLocation: 0,
+        convert: true,
+        showButton: false,
+        showMarker: false,
+        showCircle: false,
+        panToLocation: false,
+        zoomToAccuracy: false
+      });
+      geolocation.getCurrentPosition((status, result) => {
+        if (status === 'complete') {
+          const point = getLngLat(result.position);
+          if (point) return resolve({ point, accuracy: Number(result.accuracy || 0) });
+        }
+        reject(new Error(result?.message || '浏览器未能获取当前位置'));
+      });
+    });
+  }
+
+  async function locateAndShowNearby() {
+    locateButton.disabled = true;
+    locateButton.classList.add('loading');
+    statusNode.textContent = '正在定位，请允许浏览器使用位置权限…';
+    try {
+      const { point, accuracy } = await getPreciseLocation();
+      if (destroyed) return;
+      showUserLocation(point, accuracy);
+      map.setZoomAndCenter(17, point);
+      await loadNearby(point, '你当前位置');
+    } catch (error) {
+      statusNode.textContent = `定位失败：${error.message}。请确认使用 HTTPS 并允许位置权限。`;
+    } finally {
+      locateButton.disabled = false;
+      locateButton.classList.remove('loading');
+    }
+  }
+
   function renderResults(places) {
     const usable = (places || []).filter((place) => Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat))).slice(0, 10);
     if (!usable.length) {
@@ -289,6 +477,13 @@ export async function mountLocationPicker({
     }
   }
 
+  locateButton.addEventListener('click', locateAndShowNearby);
+  nearbyButton.addEventListener('click', () => {
+    const centerPoint = getLngLat(map.getCenter());
+    if (centerPoint) loadNearby(centerPoint, '地图中心');
+  });
+  nearbyCloseButton.addEventListener('click', () => { nearbyPanel.hidden = true; });
+
   searchButton.addEventListener('click', () => search());
   searchInput.addEventListener('input', () => {
     window.clearTimeout(inputTimer);
@@ -314,9 +509,11 @@ export async function mountLocationPicker({
   });
 
   map.on('click', async (event) => {
-    statusNode.textContent = '正在识别这个位置…';
+    const point = getLngLat(event.lnglat);
+    statusNode.textContent = '正在识别这个位置并查找周边地点…';
     await chooseLocation(event.lnglat, { poiId: '' });
-    statusNode.textContent = customNameInput?.value.trim() ? '位置已确认，可继续拖动标记微调。' : '位置已确认，请填写店名或地点名称。';
+    if (point) await loadNearby(point, '所选位置');
+    if (!customNameInput?.value.trim()) statusNode.textContent = '位置已确认；可选择周边地点，或自行填写店名。';
   });
 
   marker.on('dragend', async (event) => {
@@ -325,9 +522,9 @@ export async function mountLocationPicker({
     current.lng = point[0];
     current.lat = point[1];
     current.poiId = '';
-    statusNode.textContent = '正在更新地址…';
+    statusNode.textContent = '正在更新地址和周边地点…';
     await reverseGeocode(point, true);
-    statusNode.textContent = '位置已更新。';
+    await loadNearby(point, '标记位置');
   });
 
   updateSummary();
@@ -344,7 +541,11 @@ export async function mountLocationPicker({
       searchInput.value = '';
       if (customNameInput) customNameInput.value = '';
       resultsNode.hidden = true;
-      statusNode.textContent = '输入店名即可搜索，也可以直接点击地图。';
+      nearbyPanel.hidden = true;
+      nearbyList.innerHTML = '';
+      userLocationMarker.hide();
+      accuracyCircle.hide();
+      statusNode.textContent = '输入店名搜索、定位到附近，或直接点击地图。';
       emit();
     },
     destroy() {

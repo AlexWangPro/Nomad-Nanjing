@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.5.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.6.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -120,7 +120,7 @@
           </div>
         </fieldset>
         <section class="location-picker" id="publicLocationPicker">
-          <div class="location-picker-heading"><div><strong>搜索或自行标注位置 *</strong><span>搜索已有店面，或直接点击地图放置标记。</span></div></div>
+          <div class="location-picker-heading"><div><strong>搜索或自行标注位置 *</strong><span>搜索店名、定位到附近，或直接点击地图；可从周边地点中一键放置地点戳。</span></div></div>
           <div class="location-search-row">
             <input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" />
             <button class="secondary-button" type="button" data-location-search-button>搜索</button>
@@ -198,32 +198,40 @@
     </div>
   </dialog>
 
-  <dialog class="modal" id="reviewModal">
-    <form class="modal-card compact-card review-form" id="reviewForm" method="dialog">
-      <div class="modal-header">
-        <div><span class="eyebrow">COMMUNITY REVIEW</span><h2>点评这个办公地点</h2></div>
+  <dialog class="modal review-modal" id="reviewModal">
+    <form class="modal-card review-form" id="reviewForm" method="dialog">
+      <div class="modal-header review-modal-header">
+        <div><span class="eyebrow">COMMUNITY REVIEW</span><h2>点评这个办公地点</h2><p>一分钟留下真实办公体验，审核通过后公开。</p></div>
         <button class="icon-button modal-close" type="button" data-close-modal="reviewModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="review-place-summary" id="reviewPlaceSummary"></div>
       <input name="placeId" type="hidden" required />
-      <fieldset class="star-rating-field"><legend>你的评分 *</legend>
-        <div class="star-rating-input" role="radiogroup" aria-label="1到5星评分">
-          <input id="rating5" name="rating" type="radio" value="5" required /><label for="rating5" title="5星">★</label>
-          <input id="rating4" name="rating" type="radio" value="4" /><label for="rating4" title="4星">★</label>
-          <input id="rating3" name="rating" type="radio" value="3" /><label for="rating3" title="3星">★</label>
-          <input id="rating2" name="rating" type="radio" value="2" /><label for="rating2" title="2星">★</label>
-          <input id="rating1" name="rating" type="radio" value="1" /><label for="rating1" title="1星">★</label>
-        </div>
-      </fieldset>
-      <div class="form-grid two-col">
-        <label><span>用户名 *</span><input name="name" maxlength="80" required placeholder="公开显示的名字" /></label>
-        <label><span>邮箱 *</span><input name="email" type="email" required placeholder="仅用于审核，不公开" /></label>
+
+      <section class="review-rating-card" aria-labelledby="reviewRatingTitle">
+        <div class="review-rating-copy"><strong id="reviewRatingTitle">这处地方适合办公吗？</strong><span id="reviewRatingHint">点击星星评分</span></div>
+        <fieldset class="star-rating-field"><legend class="sr-only">你的评分 *</legend>
+          <div class="star-rating-input" role="radiogroup" aria-label="1到5星评分">
+            <input id="rating5" name="rating" type="radio" value="5" required /><label for="rating5" title="5星" aria-label="5星">★</label>
+            <input id="rating4" name="rating" type="radio" value="4" /><label for="rating4" title="4星" aria-label="4星">★</label>
+            <input id="rating3" name="rating" type="radio" value="3" /><label for="rating3" title="3星" aria-label="3星">★</label>
+            <input id="rating2" name="rating" type="radio" value="2" /><label for="rating2" title="2星" aria-label="2星">★</label>
+            <input id="rating1" name="rating" type="radio" value="1" /><label for="rating1" title="1星" aria-label="1星">★</label>
+          </div>
+        </fieldset>
+      </section>
+
+      <div class="review-fields-grid">
+        <label class="review-field"><span>用户名 *</span><input name="name" maxlength="80" required autocomplete="name" placeholder="公开显示的名字" /></label>
+        <label class="review-field"><span>邮箱 *</span><input name="email" type="email" required autocomplete="email" inputmode="email" placeholder="仅用于审核，不公开" /></label>
       </div>
-      <label><span>点评内容（选填）</span><textarea name="comment" maxlength="1200" rows="5" placeholder="例如：工作日下午很安静，靠墙座位有插座，周末可能满座。"></textarea></label>
+      <label class="review-field review-comment-field"><span>点评内容 <em>选填</em></span><textarea name="comment" maxlength="1200" rows="5" placeholder="例如：工作日下午安静，靠墙座位有插座；周末下午可能满座。"></textarea><small>可以只打星，也可以写下对其他办公者有帮助的信息。</small></label>
       <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
-      <button class="primary-button" id="reviewSubmitButton" type="submit">提交点评审核</button>
-      <p class="form-feedback" id="reviewFeedback" role="status"></p>
-      <p class="form-note">用户名和点评在审核通过后公开，邮箱不会公开。</p>
+
+      <div class="review-privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v9H6z"/></svg><span>用户名和点评审核通过后公开；邮箱仅供管理员审核，不会公开。</span></div>
+      <div class="review-submit-area">
+        <p class="form-feedback" id="reviewFeedback" role="status"></p>
+        <button class="primary-button" id="reviewSubmitButton" type="submit">提交点评审核</button>
+      </div>
     </form>
   </dialog>
 
@@ -294,6 +302,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.5.0"></script>
+  <script type="module" src="/app.js?v=3.6.0"></script>
 </body>
 </html>
