@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.4.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.5.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -65,6 +65,13 @@
             <div class="admin-panel"><div class="admin-list" id="submissionList"></div></div>
           </section>
 
+          <section class="portal-section" id="section-reviews" data-section="reviews">
+            <div class="section-heading"><div><span class="eyebrow">COMMUNITY REVIEWS</span><h2>点评审核</h2><p>用户名和星级在审核通过后公开，邮箱仅供后台核验。</p></div>
+              <select id="reviewStatusFilter" style="min-height:40px;border:1px solid var(--line);border-radius:12px;padding:0 11px;background:#fff"><option value="all">全部状态</option><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select>
+            </div>
+            <div class="admin-panel"><div class="admin-list" id="reviewAdminList"></div></div>
+          </section>
+
           <section class="portal-section" id="section-places" data-section="places">
             <div class="section-heading"><div><span class="eyebrow">CURATED DATABASE</span><h2>地点管理</h2><p>先预录真实候选地点，再逐个补充办公条件并标记为已验证。</p></div><div class="heading-actions"><button class="secondary-button" id="importCandidatesButton" type="button">预录首批候选地点</button><button class="primary-button" id="newPlaceButton" type="button">新增地点</button></div></div>
             <p class="form-feedback" id="candidateImportFeedback"></p>
@@ -92,15 +99,15 @@
             <div class="inline-form-card">
               <form class="admin-form quick-contributor-form" id="portalSubmissionForm">
                 <div class="form-grid two-col">
-                  <input name="placeName" type="hidden" required />
                   <label><span>地点类型</span><select name="category"><option value="coffee">咖啡馆</option><option value="library">图书馆 / 城市书房</option><option value="coworking">共享办公</option><option value="public">公共空间</option><option value="hotel">酒店大堂</option></select></label>
                   <label><span>总体结论 *</span><select name="overallSuitability" required><option value="excellent">非常适合办公</option><option value="good" selected>基本适合办公</option><option value="limited">只适合短暂停留</option><option value="unsuitable">不适合办公</option></select></label>
                 </div>
                 <section class="location-picker compact" id="portalLocationPicker">
-                  <div class="location-picker-heading"><div><strong>输入店名并选择高德地点 *</strong><span>地址和位置自动填写，无需输入经纬度。</span></div></div>
-                  <div class="location-search-row"><input type="search" data-location-search placeholder="例如：星巴克德基广场" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
-                  <p class="location-status" data-location-status>输入店名会自动显示南京候选结果。</p>
+                  <div class="location-picker-heading"><div><strong>搜索或自行标注地点 *</strong><span>高德未收录时，可以直接点击地图并填写店名。</span></div></div>
+                  <div class="location-search-row"><input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
+                  <p class="location-status" data-location-status>输入店名搜索，或直接点击地图自行标注。</p>
                   <div class="location-search-results" data-location-results hidden></div>
+                  <div class="manual-location-fields form-grid two-col"><label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name maxlength="120" required placeholder="搜索后自动填写，也可自行输入" /></label><label><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧" /></label></div>
                   <div class="location-picker-map" data-location-map></div>
                   <div class="location-summary" data-location-summary></div>
                   <input name="lng" type="hidden" required /><input name="lat" type="hidden" required /><input name="amapPoiId" type="hidden" /><input name="address" type="hidden" required /><input name="district" type="hidden" />
@@ -143,6 +150,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=3.4.0"></script>
+  <script type="module" src="/admin.js?v=3.5.0"></script>
 </body>
 </html>

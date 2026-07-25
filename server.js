@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.5.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -494,9 +494,10 @@ const seedPlaces = [
 
 function defaultDb() {
   return {
-    version: 3,
+    version: 4,
     places: seedPlaces,
     submissions: [],
+    reviews: [],
     contributors: [],
     auditLog: [],
     meta: {},
@@ -595,7 +596,15 @@ function readDb() {
   const row = sqlite.prepare('SELECT data FROM app_state WHERE id = 1').get();
   if (!row?.data) throw new Error('SQLite application state is missing. Restore a Railway Volume backup instead of reinitializing the database.');
   try {
-    return JSON.parse(row.data);
+    const db = JSON.parse(row.data);
+    db.version = Math.max(Number(db.version || 0), 4);
+    db.places = Array.isArray(db.places) ? db.places : [];
+    db.submissions = Array.isArray(db.submissions) ? db.submissions : [];
+    db.reviews = Array.isArray(db.reviews) ? db.reviews : [];
+    db.contributors = Array.isArray(db.contributors) ? db.contributors : [];
+    db.auditLog = Array.isArray(db.auditLog) ? db.auditLog : [];
+    db.meta = db.meta && typeof db.meta === 'object' ? db.meta : {};
+    return db;
   } catch (error) {
     throw new Error(`SQLite application state is invalid: ${error.message}. The database was not overwritten.`);
   }
@@ -838,6 +847,7 @@ function editablePlaceSnapshot(place) {
     lat: numberInRange(place.lat, 31.5, 32.6),
     amapPoiId: cleanString(place.amapPoiId, 80),
     address: cleanString(place.address, 240),
+    placeNote: cleanString(place.placeNote, 500),
     district: cleanString(place.district, 60),
     metroStation: cleanString(place.metroStation, 80),
     metroMinutes: numberInRange(place.metroMinutes, 0, 90),
@@ -859,7 +869,7 @@ function editablePlaceSnapshot(place) {
 }
 
 function applyEditablePlaceFields(place, body) {
-  const editable = ['name', 'address', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
+  const editable = ['name', 'address', 'placeNote', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
   for (const key of editable) if (key in body) place[key] = cleanString(body[key], key === 'description' ? 1600 : 240);
   if (categoryLabels[body.category]) place.category = body.category;
   if ('lng' in body) place.lng = numberInRange(body.lng, 118.3, 119.4, place.lng);
@@ -916,6 +926,7 @@ async function normalizeSubmission(body, user = null, db = { places: [] }) {
     name: cleanString(body.placeName, 120),
     category: categoryLabels[body.category] ? body.category : 'coffee',
     address: cleanString(body.address, 240),
+    placeNote: cleanString(body.placeNote, 500),
     district: cleanString(body.district, 60),
     lng: numberInRange(body.lng, 118.3, 119.4),
     lat: numberInRange(body.lat, 31.5, 32.6),
@@ -940,6 +951,10 @@ async function normalizeSubmission(body, user = null, db = { places: [] }) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+
+  if (!submission.address && submission.lng !== null && submission.lat !== null) {
+    submission.address = '地图自定义标注';
+  }
 
   submission.workDuration = optionLabel('workDuration', submission.workDurationChoice);
   submission.quietLevel = { silent: 5, quiet: 4, unknown: 3, noisy: 2, loud: 1 }[submission.quietChoice] || 3;
@@ -982,6 +997,7 @@ function submissionToPlace(submission, overrides = {}) {
     lat: submission.lat,
     amapPoiId: submission.amapPoiId || '',
     address: submission.address,
+    placeNote: submission.placeNote || '',
     district: submission.district,
     metroStation: '',
     metroMinutes: null,
@@ -1100,7 +1116,16 @@ function serveFile(req, res, requestPath) {
   });
 }
 
-function publicPlace(place) {
+function publicPlace(place, db = null) {
+  const approvedReviews = db && Array.isArray(db.reviews)
+    ? db.reviews
+      .filter((review) => review.placeId === place.id && review.status === 'approved')
+      .sort((a, b) => String(b.approvedAt || b.createdAt).localeCompare(String(a.approvedAt || a.createdAt)))
+    : [];
+  const ratingCount = approvedReviews.length;
+  const ratingAverage = ratingCount
+    ? Math.round((approvedReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / ratingCount) * 10) / 10
+    : null;
   return {
     id: place.id,
     name: place.name,
@@ -1110,6 +1135,7 @@ function publicPlace(place) {
     lat: place.lat,
     amapPoiId: place.amapPoiId || '',
     address: place.address,
+    placeNote: place.placeNote || '',
     district: place.district,
     metroStation: place.metroStation,
     metroMinutes: place.metroMinutes,
@@ -1130,7 +1156,16 @@ function publicPlace(place) {
     isDemo: place.isDemo === true,
     source: place.source || '',
     sourceQuery: place.sourceQuery || '',
-    verificationStatus: place.verificationStatus || (place.verified ? 'verified' : 'pending')
+    verificationStatus: place.verificationStatus || (place.verified ? 'verified' : 'pending'),
+    ratingAverage,
+    ratingCount,
+    reviews: approvedReviews.slice(0, 8).map((review) => ({
+      id: review.id,
+      name: review.reviewerName,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.approvedAt || review.createdAt
+    }))
   };
 }
 
@@ -1529,7 +1564,7 @@ async function handleApi(req, res, url) {
     const places = db.places
       .filter((place) => !place.archived)
       .sort((a, b) => Number(b.featured) - Number(a.featured) || String(b.updatedAt).localeCompare(String(a.updatedAt)))
-      .map(publicPlace);
+      .map((place) => publicPlace(place, db));
     return json(res, 200, { places });
   }
 
@@ -1545,6 +1580,50 @@ async function handleApi(req, res, url) {
     db.auditLog.unshift({ id: id('log'), action: 'submission_created', actor: submission.submitterEmail, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
     return json(res, 201, { ok: true, submissionId: submission.id, message: '已提交，正在等待管理员审核。' });
+  }
+
+  const publicReviewMatch = /^\/api\/places\/([^/]+)\/reviews$/.exec(url.pathname);
+  if (publicReviewMatch && req.method === 'POST') {
+    if (rateLimited(req, 'place-review', 6, 60 * 60 * 1000)) {
+      return json(res, 429, { error: '点评提交过于频繁，请稍后再试。' });
+    }
+    const body = await parseBody(req, 300 * 1024);
+    if (cleanString(body.website, 200)) return json(res, 400, { error: '提交验证失败。' });
+    const db = readDb();
+    const place = db.places.find((item) => item.id === publicReviewMatch[1] && !item.archived);
+    if (!place) return json(res, 404, { error: '未找到这个地点。' });
+    const reviewerName = cleanString(body.name, 80);
+    const reviewerEmail = cleanEmail(body.email);
+    const rating = numberInRange(body.rating, 1, 5);
+    const comment = cleanString(body.comment, 1200);
+    const errors = [];
+    if (!reviewerName) errors.push('用户名');
+    if (!reviewerEmail) errors.push('有效邮箱');
+    if (rating === null) errors.push('1–5 星评分');
+    if (errors.length) return json(res, 400, { error: `请补充：${errors.join('、')}。` });
+    const review = {
+      id: id('review'),
+      status: 'pending',
+      placeId: place.id,
+      placeName: place.name,
+      reviewerName,
+      reviewerEmail,
+      rating,
+      comment,
+      moderationNote: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      approvedAt: null,
+      reviewedBy: ''
+    };
+    db.reviews.unshift(review);
+    db.auditLog.unshift({ id: id('log'), action: 'review_created', actor: reviewerEmail, targetId: review.id, placeId: place.id, createdAt: new Date().toISOString() });
+    writeDb(db);
+    return json(res, 201, {
+      ok: true,
+      reviewId: review.id,
+      message: '点评已收到，审核通过后会出现在地图上。谢谢你把真实体验留给下一位在南京工作的人。'
+    });
   }
 
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {
@@ -1589,12 +1668,35 @@ async function handleApi(req, res, url) {
         secondaryReview: submissions.filter((item) => item.status === 'secondary_review').length,
         merged: submissions.filter((item) => item.status === 'merged').length,
         places: db.places.filter((item) => !item.archived).length,
-        contributors: db.contributors.filter((item) => item.active !== false).length
+        contributors: db.contributors.filter((item) => item.active !== false).length,
+        pendingReviews: user.role === 'admin' ? db.reviews.filter((item) => item.status === 'pending').length : 0,
+        approvedReviews: user.role === 'admin' ? db.reviews.filter((item) => item.status === 'approved').length : 0
       },
       submissions: submissions.slice(0, 100),
-      places: db.places.filter((item) => !item.archived).map((item) => user.role === 'admin' ? item : publicPlace(item)),
+      reviews: user.role === 'admin' ? db.reviews.slice(0, 200) : [],
+      places: db.places.filter((item) => !item.archived).map((item) => user.role === 'admin' ? item : publicPlace(item, db)),
       contributors: user.role === 'admin' ? db.contributors.map(({ passwordHash, passwordSalt, ...safe }) => safe) : []
     });
+  }
+
+  const adminReviewMatch = /^\/api\/admin\/reviews\/([^/]+)$/.exec(url.pathname);
+  if (adminReviewMatch && req.method === 'PATCH') {
+    const user = requireRole(req, res, ['admin']);
+    if (!user) return;
+    const body = await parseBody(req, 200 * 1024);
+    const db = readDb();
+    const review = db.reviews.find((item) => item.id === adminReviewMatch[1]);
+    if (!review) return json(res, 404, { error: '未找到这条点评。' });
+    const allowed = ['pending', 'approved', 'rejected'];
+    const status = allowed.includes(body.status) ? body.status : review.status;
+    review.status = status;
+    review.moderationNote = cleanString(body.moderationNote, 800);
+    review.updatedAt = new Date().toISOString();
+    review.reviewedBy = user.email;
+    review.approvedAt = status === 'approved' ? new Date().toISOString() : null;
+    db.auditLog.unshift({ id: id('log'), action: `review_${status}`, actor: user.email, targetId: review.id, placeId: review.placeId, createdAt: new Date().toISOString() });
+    writeDb(db);
+    return json(res, 200, { ok: true, review });
   }
 
   if (url.pathname === '/api/admin/candidate-seeds' && req.method === 'GET') {
@@ -1729,6 +1831,7 @@ async function handleApi(req, res, url) {
       if (Array.isArray(submission.images) && submission.images.length) {
         place.images = [...new Set([...(place.images || []), ...submission.images])].slice(0, 8);
       }
+      if (submission.placeNote && !place.placeNote) place.placeNote = submission.placeNote;
       place.lastCommunityReportAt = new Date().toISOString();
       place.updatedAt = new Date().toISOString();
       submission.mergedIntoPlaceId = place.id;
@@ -1737,7 +1840,7 @@ async function handleApi(req, res, url) {
     db.auditLog.unshift({ id: id('log'), action: `submission_${nextStatus}`, actor: user.email, targetId: submission.id, createdAt: new Date().toISOString() });
     writeDb(db);
     for (const imageUrl of mediaToDelete) deleteMediaByUrl(imageUrl);
-    return json(res, 200, { ok: true, submission, place: place ? publicPlace(place) : null });
+    return json(res, 200, { ok: true, submission, place: place ? publicPlace(place, db) : null });
   }
 
   const portalPlaceMatch = /^\/api\/portal\/places\/([^/]+)$/.exec(url.pathname);
@@ -1766,7 +1869,7 @@ async function handleApi(req, res, url) {
       db.auditLog.unshift({ id: id('log'), action: 'place_updated', actor: user.email, targetId: place.id, createdAt: new Date().toISOString() });
       writeDb(db);
       for (const imageUrl of oldImages.filter((item) => !place.images.includes(item))) deleteMediaByUrl(imageUrl);
-      return json(res, 200, { ok: true, mode: 'published', place: publicPlace(place) });
+      return json(res, 200, { ok: true, mode: 'published', place: publicPlace(place, db) });
     }
 
     const submission = {
@@ -1816,6 +1919,7 @@ async function handleApi(req, res, url) {
       lat: numberInRange(body.lat, 31.5, 32.6),
       amapPoiId: cleanString(body.amapPoiId, 80),
       address: cleanString(body.address, 240),
+      placeNote: cleanString(body.placeNote, 500),
       district: cleanString(body.district, 60),
       metroStation: cleanString(body.metroStation, 80),
       metroMinutes: numberInRange(body.metroMinutes, 0, 90),
@@ -1845,7 +1949,7 @@ async function handleApi(req, res, url) {
     db.places.unshift(place);
     db.auditLog.unshift({ id: id('log'), action: 'place_created', actor: user.email, targetId: place.id, createdAt: new Date().toISOString() });
     writeDb(db);
-    return json(res, 201, { ok: true, place: publicPlace(place) });
+    return json(res, 201, { ok: true, place: publicPlace(place, db) });
   }
 
   const placeMatch = /^\/api\/admin\/places\/([^/]+)$/.exec(url.pathname);
@@ -1856,7 +1960,7 @@ async function handleApi(req, res, url) {
     const db = readDb();
     const place = db.places.find((item) => item.id === placeMatch[1]);
     if (!place) return json(res, 404, { error: '未找到地点。' });
-    const editable = ['name', 'address', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
+    const editable = ['name', 'address', 'placeNote', 'district', 'metroStation', 'price', 'hours', 'wifi', 'outlets', 'description', 'lastVerified', 'amapPoiId'];
     for (const key of editable) if (key in body) place[key] = cleanString(body[key], key === 'description' ? 1600 : 240);
     if (categoryLabels[body.category]) place.category = body.category;
     if ('lng' in body) place.lng = numberInRange(body.lng, 118.3, 119.4, place.lng);
@@ -1868,7 +1972,7 @@ async function handleApi(req, res, url) {
     place.updatedAt = new Date().toISOString();
     db.auditLog.unshift({ id: id('log'), action: 'place_updated', actor: user.email, targetId: place.id, createdAt: new Date().toISOString() });
     writeDb(db);
-    return json(res, 200, { ok: true, place: publicPlace(place) });
+    return json(res, 200, { ok: true, place: publicPlace(place, db) });
   }
 
   if (placeMatch && req.method === 'DELETE') {

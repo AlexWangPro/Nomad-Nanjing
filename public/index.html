@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.4.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.5.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -68,7 +68,7 @@
         </div>
         <span class="count-badge" id="placeCount">0</span>
       </div>
-      <p class="rail-intro">只展示经过编辑或社区审核的地点，不开放公开星级评分。</p>
+      <p class="rail-intro">地点与用户点评均经过审核后公开，评分只反映已审核的真实体验。</p>
       <div id="placeList" class="place-list"></div>
     </aside>
 
@@ -105,7 +105,7 @@
       <p class="form-feedback submission-step-feedback" id="submissionStepFeedback" role="status"></p>
 
       <section class="submission-step active" data-submit-step="1">
-        <p class="form-note">输入店名并选择高德结果。地址和位置会自动填写，不需要输入经纬度。</p>
+        <p class="form-note">可以搜索高德地点，也可以直接点击地图自行标注。店名和位置备注都可以自行填写。</p>
         <div class="form-grid two-col">
           <label><span>联系邮箱 *</span><input name="email" type="email" required placeholder="用于通知审核结果" /></label>
           <label><span>你的称呼（选填）</span><input name="name" maxlength="80" placeholder="例如 Alex" /></label>
@@ -119,15 +119,18 @@
             <label><input type="radio" name="category" value="hotel" /><span>酒店大堂</span></label>
           </div>
         </fieldset>
-        <input name="placeName" type="hidden" required />
         <section class="location-picker" id="publicLocationPicker">
-          <div class="location-picker-heading"><div><strong>搜索店名并确认位置 *</strong><span>例如：星巴克德基广场、南京图书馆、先锋书店。</span></div></div>
+          <div class="location-picker-heading"><div><strong>搜索或自行标注位置 *</strong><span>搜索已有店面，或直接点击地图放置标记。</span></div></div>
           <div class="location-search-row">
-            <input type="search" data-location-search placeholder="只需输入店名" autocomplete="off" />
+            <input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" />
             <button class="secondary-button" type="button" data-location-search-button>搜索</button>
           </div>
-          <p class="location-status" data-location-status>输入两个字以上会自动显示南京高德候选结果。</p>
+          <p class="location-status" data-location-status>输入两个字以上搜索；高德未收录时，直接点击地图自行标注。</p>
           <div class="location-search-results" data-location-results hidden></div>
+          <div class="manual-location-fields form-grid two-col">
+            <label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name required maxlength="120" placeholder="搜索后自动填写，也可自行输入" /></label>
+            <label><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧、从西门进入更近" /></label>
+          </div>
           <div class="location-picker-map" data-location-map aria-label="选择地点位置"></div>
           <div class="location-summary" data-location-summary></div>
           <input name="lng" type="hidden" required />
@@ -195,6 +198,45 @@
     </div>
   </dialog>
 
+  <dialog class="modal" id="reviewModal">
+    <form class="modal-card compact-card review-form" id="reviewForm" method="dialog">
+      <div class="modal-header">
+        <div><span class="eyebrow">COMMUNITY REVIEW</span><h2>点评这个办公地点</h2></div>
+        <button class="icon-button modal-close" type="button" data-close-modal="reviewModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="review-place-summary" id="reviewPlaceSummary"></div>
+      <input name="placeId" type="hidden" required />
+      <fieldset class="star-rating-field"><legend>你的评分 *</legend>
+        <div class="star-rating-input" role="radiogroup" aria-label="1到5星评分">
+          <input id="rating5" name="rating" type="radio" value="5" required /><label for="rating5" title="5星">★</label>
+          <input id="rating4" name="rating" type="radio" value="4" /><label for="rating4" title="4星">★</label>
+          <input id="rating3" name="rating" type="radio" value="3" /><label for="rating3" title="3星">★</label>
+          <input id="rating2" name="rating" type="radio" value="2" /><label for="rating2" title="2星">★</label>
+          <input id="rating1" name="rating" type="radio" value="1" /><label for="rating1" title="1星">★</label>
+        </div>
+      </fieldset>
+      <div class="form-grid two-col">
+        <label><span>用户名 *</span><input name="name" maxlength="80" required placeholder="公开显示的名字" /></label>
+        <label><span>邮箱 *</span><input name="email" type="email" required placeholder="仅用于审核，不公开" /></label>
+      </div>
+      <label><span>点评内容（选填）</span><textarea name="comment" maxlength="1200" rows="5" placeholder="例如：工作日下午很安静，靠墙座位有插座，周末可能满座。"></textarea></label>
+      <label class="honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+      <button class="primary-button" id="reviewSubmitButton" type="submit">提交点评审核</button>
+      <p class="form-feedback" id="reviewFeedback" role="status"></p>
+      <p class="form-note">用户名和点评在审核通过后公开，邮箱不会公开。</p>
+    </form>
+  </dialog>
+
+  <dialog class="modal success-modal" id="reviewSuccessModal">
+    <div class="modal-card compact-card success-card">
+      <div class="success-orbit" aria-hidden="true"><span></span><span></span><span></span><svg viewBox="0 0 24 24"><path d="m7 12 3.2 3.2L17.5 8"/></svg></div>
+      <span class="success-kicker">REVIEW RECEIVED · 待审核</span>
+      <h2>谢谢你，把真实体验留给下一位南京工作者。</h2>
+      <p>点评审核通过后会出现在地图上。愿你今天找到合适的桌子，也留一点时间看看窗外。</p>
+      <button class="primary-button success-close" type="button" data-close-modal="reviewSuccessModal">继续探索南京</button>
+    </div>
+  </dialog>
+
   <dialog class="modal" id="favoriteModal">
     <div class="modal-card compact-card">
       <div class="modal-header">
@@ -252,6 +294,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.4.0"></script>
+  <script type="module" src="/app.js?v=3.5.0"></script>
 </body>
 </html>

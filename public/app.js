@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.4.0';
+import { mountLocationPicker } from './location-picker.js?v=3.5.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -56,6 +56,19 @@ const categoryLabel = {
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+}
+
+function ratingStars(rating = 0) {
+  const rounded = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  return `<span class="rating-stars" aria-label="${rounded} 星">${'★'.repeat(rounded)}${'☆'.repeat(5 - rounded)}</span>`;
+}
+
+function formatReviewDate(value) {
+  try {
+    return new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
 }
 
 async function api(path, options = {}) {
@@ -140,6 +153,7 @@ function renderList() {
             <span>${escapeHtml(place.metroStation || place.district || '南京')}</span>
             ${place.metroMinutes != null ? `<span>步行 ${place.metroMinutes} 分钟</span>` : ''}
             <span>${escapeHtml(place.price || '待确认')}</span>
+            ${place.ratingCount ? `<span class="place-card-rating">★ ${Number(place.ratingAverage).toFixed(1)} · ${place.ratingCount}</span>` : ''}
           </span>
           <span class="place-tags">
             ${getTags(place).map((tag) => `<span class="soft-tag ${tag.accent ? 'accent' : ''}">${tag.label}</span>`).join('')}
@@ -253,6 +267,13 @@ function renderDetail(place) {
     </div>
     <h2 class="detail-title">${escapeHtml(place.name)}</h2>
     <div class="detail-subtitle">${escapeHtml(place.address || '')}${place.metroStation ? ` · 距 ${escapeHtml(place.metroStation)}步行约 ${escapeHtml(place.metroMinutes ?? '?')} 分钟` : ''}</div>
+    ${place.placeNote ? `<div class="place-location-note"><strong>位置备注</strong><span>${escapeHtml(place.placeNote)}</span></div>` : ''}
+    <div class="community-rating-card">
+      <div class="community-rating-score">
+        ${place.ratingCount ? `<strong>${Number(place.ratingAverage).toFixed(1)}</strong>${ratingStars(place.ratingAverage)}<small>${place.ratingCount} 条已审核点评</small>` : `<strong>新地点</strong><span class="rating-empty">还没有公开点评</span>`}
+      </div>
+      <button class="secondary-button review-open-button" id="detailReviewButton" type="button">点评 / 打星</button>
+    </div>
     ${images.length ? `
       <div class="detail-photo-heading"><strong>现场照片</strong><span>${images.length} 张</span></div>
       <div class="detail-photo-grid count-${Math.min(images.length, 4)}">
@@ -285,9 +306,14 @@ function renderDetail(place) {
       <h4>营业与验证</h4>
       <p>营业时间：${escapeHtml(place.hours || '待确认')}<br>最近确认：${escapeHtml(place.lastVerified || '待确认')}<br>${place.callFriendly ? '允许轻度通话或视频会议。' : '不建议在主要座位区通话。'} ${place.unlimited ? '通常不限时。' : '可能存在限时或高峰占座规则。'}</p>
     </div>
+    <div class="detail-section community-review-section">
+      <div class="detail-section-heading"><h4>社区点评</h4><span>${place.ratingCount || 0} 条</span></div>
+      ${place.reviews?.length ? `<div class="community-review-list">${place.reviews.map((review) => `<article class="community-review"><div><strong>${escapeHtml(review.name || '南京工作者')}</strong>${ratingStars(review.rating)}<time>${escapeHtml(formatReviewDate(review.createdAt))}</time></div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : '<p class="muted-review">只留下了星级评分。</p>'}</article>`).join('')}</div>` : '<p class="empty-review-copy">还没有审核通过的点评。你可以成为第一个留下真实体验的人。</p>'}
+    </div>
     ${place.isDemo ? '<div class="detail-footnote">本条为首版界面演示数据，正式公开前请在后台替换为经过核实的真实地点。</div>' : ''}
   `;
   $('#detailFavorite').addEventListener('click', () => toggleFavorite(place.id));
+  $('#detailReviewButton')?.addEventListener('click', () => openReviewModal(place));
 }
 
 function selectPlace(id, pan) {
@@ -463,6 +489,7 @@ function updateSubmissionSummary() {
   const name = form.elements.placeName.value || '尚未选择地点';
   const rows = [
     ['地点', name],
+    ['位置备注', form.elements.placeNote?.value || '无'],
     ['总体结论', selectedText('overallSuitability')],
     ['办公时长', selectedText('workDurationChoice')],
     ['安静 / Wi-Fi', [selectedText('quietChoice'), selectedText('wifiChoice')].filter(Boolean).join(' · ')],
@@ -502,7 +529,7 @@ function validateSubmissionStep(step) {
     }
     if (!form.elements.lng.value || !form.elements.lat.value || !form.elements.address.value || !form.elements.placeName.value) {
       feedback.classList.add('error');
-      feedback.textContent = '请先搜索店名，并选择一个具体高德地点。';
+      feedback.textContent = '请填写店名，并通过高德搜索或点击地图确认位置。';
       return false;
     }
   }
@@ -519,7 +546,7 @@ function validateSubmissionStep(step) {
 }
 
 const MAX_PHOTOS = 8;
-const TARGET_PHOTO_BYTES = 300 * 1024;
+const TARGET_PHOTO_BYTES = 150 * 1024;
 const MAX_SOURCE_BYTES = 35 * 1024 * 1024;
 
 function blobToDataUrl(blob) {
@@ -742,6 +769,51 @@ async function submitPlace(event) {
   } finally {
     button.disabled = false;
     button.textContent = '提交审核';
+  }
+}
+
+function openReviewModal(place) {
+  const form = $('#reviewForm');
+  form.reset();
+  form.elements.placeId.value = place.id;
+  form.elements.name.value = localStorage.getItem('nwm-review-name') || '';
+  form.elements.email.value = localStorage.getItem('nwm-review-email') || '';
+  $('#reviewPlaceSummary').innerHTML = `<span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span><div><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.address || place.district || '南京')}</small></div>`;
+  const feedback = $('#reviewFeedback');
+  feedback.textContent = '';
+  feedback.className = 'form-feedback';
+  openModal('reviewModal');
+}
+
+async function submitReview(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $('#reviewSubmitButton');
+  const feedback = $('#reviewFeedback');
+  const data = Object.fromEntries(new FormData(form).entries());
+  feedback.className = 'form-feedback';
+  feedback.textContent = '';
+  if (!data.rating) {
+    feedback.classList.add('error');
+    feedback.textContent = '请先选择 1–5 星。';
+    return;
+  }
+  button.disabled = true;
+  button.textContent = '正在提交…';
+  try {
+    const result = await api(`/api/places/${encodeURIComponent(data.placeId)}/reviews`, { method: 'POST', body: JSON.stringify(data) });
+    localStorage.setItem('nwm-review-name', data.name || '');
+    localStorage.setItem('nwm-review-email', data.email || '');
+    feedback.classList.add('success');
+    feedback.textContent = result.message || '点评已提交，等待审核。';
+    $('#reviewModal').close();
+    openModal('reviewSuccessModal');
+  } catch (error) {
+    feedback.classList.add('error');
+    feedback.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = '提交点评审核';
   }
 }
 
@@ -974,6 +1046,7 @@ function wireEvents() {
     if (button) removePhoto(button.dataset.photoRemove);
   });
   $('#submissionForm').addEventListener('submit', submitPlace);
+  $('#reviewForm').addEventListener('submit', submitReview);
   $$('[data-submit-next]').forEach((button) => button.addEventListener('click', () => { if (validateSubmissionStep(state.submissionStep)) setSubmissionStep(state.submissionStep + 1); }));
   $$('[data-submit-back]').forEach((button) => button.addEventListener('click', () => setSubmissionStep(state.submissionStep - 1)));
   $('#submissionForm').addEventListener('change', () => { if (state.submissionStep === 3) updateSubmissionSummary(); });

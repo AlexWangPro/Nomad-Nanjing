@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.4.0';
+import { mountLocationPicker } from './location-picker.js?v=3.5.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -90,6 +90,7 @@ function renderNav() {
   const adminItems = [
     ['overview', '工作台'],
     ['submissions', '地点审核'],
+    ['reviews', '点评审核'],
     ['places', '地点管理'],
     ['contributors', '贡献者']
   ];
@@ -118,7 +119,7 @@ function showSection(id, refreshNav = true) {
 function renderStats() {
   const c = state.data.counts;
   const cards = state.user.role === 'admin'
-    ? [['待审核', c.pending], ['待二次验证', c.secondaryReview || 0], ['已发布地点', c.places], ['需补充', c.needsInfo || 0]]
+    ? [['待审核地点', c.pending], ['待审核点评', c.pendingReviews || 0], ['待二次验证', c.secondaryReview || 0], ['已发布地点', c.places], ['需补充', c.needsInfo || 0]]
     : [['待审核', c.pending], ['已通过', c.approved], ['需要补充', c.needsInfo || 0], ['我的提交', state.data.submissions.length]];
   $('#statGrid').innerHTML = cards.map(([label, value]) => `<div class="stat-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
 }
@@ -171,6 +172,58 @@ function renderPlaces() {
   $$('[data-archive-place]').forEach((button) => button.addEventListener('click', () => archivePlace(button.dataset.archivePlace)));
 }
 
+function reviewRow(item) {
+  const stars = '★'.repeat(Number(item.rating || 0)) + '☆'.repeat(Math.max(0, 5 - Number(item.rating || 0)));
+  return `<div class="admin-row">
+    <div><strong>${escapeHtml(item.placeName || '未知地点')}</strong><small>${escapeHtml(item.comment || '只提交了星级评分')}</small></div>
+    <div><span class="status-pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel[item.status] || item.status)}</span><small class="admin-review-stars">${stars}</small></div>
+    <div><strong>${escapeHtml(item.reviewerName)}</strong><small>${escapeHtml(item.reviewerEmail)} · ${new Date(item.createdAt).toLocaleString('zh-CN')}</small></div>
+    <div class="row-actions"><button class="small-button primary" type="button" data-review-community="${escapeHtml(item.id)}">审核点评</button></div>
+  </div>`;
+}
+
+function renderReviews() {
+  const filter = $('#reviewStatusFilter')?.value || 'all';
+  const reviews = (state.data.reviews || []).filter((item) => filter === 'all' || item.status === filter);
+  $('#reviewAdminList').innerHTML = reviews.length ? reviews.map(reviewRow).join('') : '<div class="empty-state">当前筛选下没有点评。</div>';
+  $$('[data-review-community]').forEach((button) => button.addEventListener('click', () => openCommunityReview(button.dataset.reviewCommunity)));
+}
+
+function openCommunityReview(id) {
+  const item = (state.data.reviews || []).find((review) => review.id === id);
+  if (!item) return;
+  const place = (state.data.places || []).find((candidate) => candidate.id === item.placeId);
+  const stars = '★'.repeat(Number(item.rating || 0)) + '☆'.repeat(Math.max(0, 5 - Number(item.rating || 0)));
+  openDrawer(`
+    <div class="drawer-header"><div><span class="eyebrow">REVIEW MODERATION</span><h3>${escapeHtml(item.placeName || place?.name || '地点点评')}</h3></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <span class="status-pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel[item.status] || item.status)}</span>
+    <div class="drawer-meta"><div><span>用户名</span><strong>${escapeHtml(item.reviewerName)}</strong></div><div><span>邮箱（不公开）</span><strong>${escapeHtml(item.reviewerEmail)}</strong></div><div><span>评分</span><strong class="admin-review-stars large">${stars}</strong></div><div><span>提交时间</span><strong>${new Date(item.createdAt).toLocaleString('zh-CN')}</strong></div></div>
+    <div class="detail-section"><h4>点评内容</h4><p>${escapeHtml(item.comment || '用户只提交了星级评分。')}</p></div>
+    ${place ? `<div class="detail-section"><h4>对应地点</h4><p>${escapeHtml(place.name)}<br>${escapeHtml(place.address || '')}</p></div>` : '<div class="detail-footnote">对应地点已下架或不存在。</div>'}
+    <form class="admin-form" id="communityReviewModerationForm" style="margin-top:20px">
+      <label><span>审核备注（仅后台）</span><textarea name="moderationNote" rows="3">${escapeHtml(item.moderationNote || '')}</textarea></label>
+      <div class="review-actions"><button class="primary-button approve" type="button" data-community-review-action="approved">通过并公开</button><button class="secondary-button" type="button" data-community-review-action="pending">保留待审核</button><button class="danger-button" type="button" data-community-review-action="rejected">拒绝</button></div>
+      <p class="form-feedback" id="communityReviewFeedback"></p>
+    </form>
+  `);
+  $('[data-close-drawer]').addEventListener('click', closeDrawer);
+  $$('[data-community-review-action]').forEach((button) => button.addEventListener('click', () => moderateCommunityReview(id, button.dataset.communityReviewAction)));
+}
+
+async function moderateCommunityReview(id, status) {
+  const form = $('#communityReviewModerationForm');
+  const node = $('#communityReviewFeedback');
+  feedback(node, '正在保存…');
+  try {
+    await api(`/api/admin/reviews/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status, moderationNote: form.elements.moderationNote.value }) });
+    feedback(node, status === 'approved' ? '点评已公开。' : status === 'rejected' ? '点评已拒绝。' : '已保留待审核。', 'success');
+    await refreshData();
+    setTimeout(closeDrawer, 450);
+  } catch (error) {
+    feedback(node, error.message, 'error');
+  }
+}
+
 function renderContributors() {
   const contributors = state.data.contributors || [];
   $('#contributorList').innerHTML = contributors.length ? contributors.map((item) => `
@@ -190,6 +243,7 @@ function renderAll() {
   renderPlaces();
   if (state.user.role === 'admin') {
     renderSubmissions();
+    renderReviews();
     renderContributors();
   }
 }
@@ -246,6 +300,7 @@ function openPlaceUpdateSubmission(item) {
   const fieldRows = [
     ['名称', current?.name, proposed.name],
     ['地址', current?.address, proposed.address],
+    ['位置备注', current?.placeNote, proposed.placeNote],
     ['类型', categoryLabel[current?.category] || current?.category, categoryLabel[proposed.category] || proposed.category],
     ['营业时间', current?.hours, proposed.hours],
     ['消费', current?.price, proposed.price],
@@ -316,6 +371,7 @@ function openSubmission(id) {
       <div><span>地图位置</span><strong>${item.lng != null && item.lat != null ? '已确认' : '未确认'}</strong></div>
     </div>
     <div class="detail-section"><h4>地址</h4><p>${escapeHtml(item.address)}</p></div>
+    ${item.placeNote ? `<div class="detail-section"><h4>位置备注</h4><p>${escapeHtml(item.placeNote)}</p></div>` : ''}
     <div class="review-choice-grid">${choiceRows.map(([label, value]) => `<div class="review-choice"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div>
     ${item.experienceNote ? `<div class="detail-section"><h4>可选补充感受</h4><p>${escapeHtml(item.experienceNote)}</p></div>` : ''}
     ${item.evidenceNote ? `<div class="detail-section"><h4>注意事项</h4><p>${escapeHtml(item.evidenceNote)}</p></div>` : ''}
@@ -394,9 +450,9 @@ function placeForm(place = {}) {
     <form class="admin-form" id="placeForm">
       <div class="form-grid two-col"><label><span>地点名称 *</span><input name="name" required value="${escapeHtml(place.name || '')}" /></label><label><span>类型</span><select name="category">${Object.entries(categoryLabel).map(([value,label]) => `<option value="${value}" ${place.category === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
       <section class="location-picker compact" id="placeLocationPicker">
-        <div class="location-picker-heading"><div><strong>搜索并确认精确位置 *</strong><span>管理员也无需填写经纬度，直接在地图中确认。</span></div></div>
+        <div class="location-picker-heading"><div><strong>搜索或自行标注精确位置 *</strong><span>高德未收录时，可以直接点击地图并自行填写名称。</span></div></div>
         <div class="location-search-row"><input type="search" data-location-search placeholder="输入店名即可，如：星巴克、金陵图书馆" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
-        <p class="location-status" data-location-status>输入店名会自动显示高德候选结果，无需填写完整地址。</p>
+        <p class="location-status" data-location-status>输入店名搜索，或直接点击地图自行标注。</p>
         <div class="location-search-results" data-location-results hidden></div>
         <div class="location-picker-map" data-location-map></div>
         <div class="location-summary" data-location-summary></div>
@@ -405,7 +461,8 @@ function placeForm(place = {}) {
         <input name="amapPoiId" type="hidden" value="${escapeHtml(place.amapPoiId || '')}" />
       </section>
       <label><span>地图识别地址 *</span><input name="address" required readonly value="${escapeHtml(place.address || '')}" /></label>
-      <label><span>楼层、入口或座位区域补充</span><input name="addressDetail" placeholder="仅填写地图地址之外的补充信息" /></label>
+      <label><span>位置备注（选填）</span><input name="placeNote" maxlength="500" value="${escapeHtml(place.placeNote || '')}" placeholder="例如：商场三楼北侧、从西门进入更近" /></label>
+      <label><span>楼层、入口或座位区域补充</span><input name="addressDetail" placeholder="可补充到公开地址后面" /></label>
       <div class="form-grid three-col"><label><span>区域</span><input name="district" value="${escapeHtml(place.district || '')}" /></label><label><span>地铁站</span><input name="metroStation" value="${escapeHtml(place.metroStation || '')}" /></label><label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" value="${place.metroMinutes ?? ''}" /></label></div>
       <div class="form-grid two-col"><label><span>消费</span><input name="price" value="${escapeHtml(place.price || '')}" /></label><label><span>营业时间</span><input name="hours" value="${escapeHtml(place.hours || '')}" /></label></div>
       <div class="form-grid three-col"><label><span>安静程度</span><select name="quietLevel">${[5,4,3,2,1].map((n) => `<option value="${n}" ${Number(place.quietLevel || 3) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label><span>Wi-Fi</span><input name="wifi" value="${escapeHtml(place.wifi || '')}" /></label><label><span>插座</span><input name="outlets" value="${escapeHtml(place.outlets || '')}" /></label></div>
@@ -556,7 +613,7 @@ async function createContributor(event) {
 }
 
 const MAX_PORTAL_PHOTOS = 8;
-const TARGET_PORTAL_PHOTO_BYTES = 300 * 1024;
+const TARGET_PORTAL_PHOTO_BYTES = 150 * 1024;
 const MAX_PORTAL_SOURCE_BYTES = 35 * 1024 * 1024;
 
 function portalBlobToDataUrl(blob) {
@@ -757,7 +814,7 @@ async function contributorSubmit(event) {
   syncPortalLocationFields(form);
   const payload = Object.fromEntries(new FormData(form).entries());
   if (!payload.lng || !payload.lat || !payload.address || !payload.placeName) {
-    feedback($('#portalSubmitFeedback'), '请先输入店名并选择一个具体高德地点。', 'error');
+    feedback($('#portalSubmitFeedback'), '请填写店名，并通过高德搜索或点击地图确认位置。', 'error');
     $('#portalLocationPicker').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
@@ -820,6 +877,7 @@ function wireEvents() {
   $('#logoutButton').addEventListener('click', logout);
   $('#drawerOverlay').addEventListener('click', closeDrawer);
   $('#submissionStatusFilter').addEventListener('change', renderSubmissions);
+  $('#reviewStatusFilter').addEventListener('change', renderReviews);
   $('#newPlaceButton').addEventListener('click', () => openPlaceEditor());
   $('#importCandidatesButton').addEventListener('click', importCandidatePlaces);
   $('#contributorForm').addEventListener('submit', createContributor);

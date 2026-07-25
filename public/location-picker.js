@@ -119,6 +119,7 @@ export async function mountLocationPicker({
   const mapNode = root.querySelector('[data-location-map]');
   const summaryNode = root.querySelector('[data-location-summary]');
   const statusNode = root.querySelector('[data-location-status]');
+  const customNameInput = getPlaceNameField(fieldRoot);
 
   if (!searchInput || !searchButton || !resultsNode || !mapNode || !summaryNode || !statusNode) {
     throw new Error('位置选择器页面结构不完整，请刷新后重试');
@@ -152,13 +153,15 @@ export async function mountLocationPicker({
   map.add(marker);
 
   let current = {
-    name: text(initial.name),
+    name: text(initial.name || customNameInput?.value),
     address: text(initial.address),
     district: text(initial.district),
     lng: hasInitial ? initialLng : null,
     lat: hasInitial ? initialLat : null,
     poiId: text(initial.poiId)
   };
+  if (customNameInput && current.name) customNameInput.value = current.name;
+
   let destroyed = false;
   let inputTimer = null;
   let requestSerial = 0;
@@ -170,6 +173,7 @@ export async function mountLocationPicker({
   }
 
   function emit() {
+    if (customNameInput && customNameInput.value.trim()) current.name = customNameInput.value.trim();
     setField(fieldRoot, 'lng', Number.isFinite(current.lng) ? current.lng.toFixed(6) : '');
     setField(fieldRoot, 'lat', Number.isFinite(current.lat) ? current.lat.toFixed(6) : '');
     setField(fieldRoot, 'address', current.address || '');
@@ -303,10 +307,16 @@ export async function mountLocationPicker({
     }
   });
 
+  customNameInput?.addEventListener('input', () => {
+    current.name = customNameInput.value.trim();
+    updateSummary();
+    onChange?.({ ...current });
+  });
+
   map.on('click', async (event) => {
     statusNode.textContent = '正在识别这个位置…';
     await chooseLocation(event.lnglat, { poiId: '' });
-    statusNode.textContent = '位置已确认，可继续拖动标记微调。';
+    statusNode.textContent = customNameInput?.value.trim() ? '位置已确认，可继续拖动标记微调。' : '位置已确认，请填写店名或地点名称。';
   });
 
   marker.on('dragend', async (event) => {
@@ -326,12 +336,13 @@ export async function mountLocationPicker({
 
   const controller = {
     map,
-    getValue: () => ({ ...current }),
+    getValue: () => ({ ...current, name: customNameInput?.value.trim() || current.name }),
     reset() {
       current = { name: '', address: '', district: '', lng: null, lat: null, poiId: '' };
       marker.hide();
       map.setZoomAndCenter(12, DEFAULT_CENTER);
       searchInput.value = '';
+      if (customNameInput) customNameInput.value = '';
       resultsNode.hidden = true;
       statusNode.textContent = '输入店名即可搜索，也可以直接点击地图。';
       emit();
