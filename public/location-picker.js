@@ -128,7 +128,7 @@ function summaryHtml({ name, address, district, lng, lat }) {
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
     return '<strong>尚未确认位置</strong><span>输入店名搜索，或直接点击地图选择。</span>';
   }
-  return `<strong>${escapeHtml(name || '已确认地图位置')}</strong><span>${escapeHtml(address || district || '南京市')}</span><small>可拖动标记或点击地图微调位置</small>`;
+  return `<strong>${escapeHtml(name || '已确认地图位置')}</strong><span>${escapeHtml(address || district || '地址请手动填写')}</span><small>地图负责确认坐标；手动标注时请直接填写详细地址</small>`;
 }
 
 export async function mountLocationPicker({
@@ -149,6 +149,7 @@ export async function mountLocationPicker({
   const summaryNode = root.querySelector('[data-location-summary]');
   const statusNode = root.querySelector('[data-location-status]');
   const customNameInput = getPlaceNameField(fieldRoot);
+  const addressInput = fieldRoot.querySelector('[data-location-address]') || fieldRoot.querySelector('[name="address"]');
 
   if (!searchInput || !searchButton || !resultsNode || !mapNode || !summaryNode || !statusNode) {
     throw new Error('位置选择器页面结构不完整，请刷新后重试');
@@ -287,11 +288,13 @@ export async function mountLocationPicker({
   async function chooseLocation(lnglat, meta = {}) {
     const point = getLngLat(lnglat);
     if (!point) return;
+    const hasAddress = Object.prototype.hasOwnProperty.call(meta, 'address');
+    const hasDistrict = Object.prototype.hasOwnProperty.call(meta, 'district');
     current = {
       ...current,
       name: meta.name || current.name,
-      address: meta.address || current.address,
-      district: meta.district || current.district,
+      address: hasAddress ? text(meta.address) : current.address,
+      district: hasDistrict ? text(meta.district) : current.district,
       poiId: meta.poiId || '',
       lng: point[0],
       lat: point[1]
@@ -304,7 +307,7 @@ export async function mountLocationPicker({
     marker.show();
     map.setZoomAndCenter(16, point);
     emit();
-    if (!meta.address || !meta.district) await reverseGeocode(point, true);
+    if (meta.autoAddress !== false && (!current.address || !current.district)) await reverseGeocode(point, true);
   }
 
   function renderNearbyResults(places) {
@@ -508,12 +511,17 @@ export async function mountLocationPicker({
     onChange?.({ ...current });
   });
 
+  addressInput?.addEventListener('input', () => {
+    current.address = addressInput.value.trim();
+    updateSummary();
+    onChange?.({ ...current });
+  });
+
   map.on('click', async (event) => {
     const point = getLngLat(event.lnglat);
-    statusNode.textContent = '正在识别这个位置并查找周边地点…';
-    await chooseLocation(event.lnglat, { poiId: '' });
+    statusNode.textContent = '位置已确认。请直接填写店名和详细地址，或从周边地点中选择。';
+    await chooseLocation(event.lnglat, { poiId: '', address: addressInput?.value.trim() || '', district: '', autoAddress: false });
     if (point) await loadNearby(point, '所选位置');
-    if (!customNameInput?.value.trim()) statusNode.textContent = '位置已确认；可选择周边地点，或自行填写店名。';
   });
 
   marker.on('dragend', async (event) => {
@@ -522,8 +530,8 @@ export async function mountLocationPicker({
     current.lng = point[0];
     current.lat = point[1];
     current.poiId = '';
-    statusNode.textContent = '正在更新地址和周边地点…';
-    await reverseGeocode(point, true);
+    statusNode.textContent = '坐标已更新。地址保持手动输入，也可以从周边地点中重新选择。';
+    emit();
     await loadNearby(point, '标记位置');
   });
 

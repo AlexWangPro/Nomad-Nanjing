@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.6.0';
+import { mountLocationPicker } from './location-picker.js?v=3.7.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -16,6 +16,7 @@ const state = {
   usingFallback: true,
   userPosition: null,
   photoData: [],
+  reviewPhotos: [],
   amapDiagnostics: [],
   submissionLocationPicker: null,
   submissionStep: 1,
@@ -308,7 +309,7 @@ function renderDetail(place) {
     </div>
     <div class="detail-section community-review-section">
       <div class="detail-section-heading"><h4>社区点评</h4><span>${place.ratingCount || 0} 条</span></div>
-      ${place.reviews?.length ? `<div class="community-review-list">${place.reviews.map((review) => `<article class="community-review"><div><strong>${escapeHtml(review.name || '南京工作者')}</strong>${ratingStars(review.rating)}<time>${escapeHtml(formatReviewDate(review.createdAt))}</time></div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : '<p class="muted-review">只留下了星级评分。</p>'}</article>`).join('')}</div>` : '<p class="empty-review-copy">还没有审核通过的点评。你可以成为第一个留下真实体验的人。</p>'}
+      ${place.reviews?.length ? `<div class="community-review-list">${place.reviews.map((review) => `<article class="community-review"><div><strong>${escapeHtml(review.name || '南京工作者')}</strong>${ratingStars(review.rating)}<time>${escapeHtml(formatReviewDate(review.createdAt))}</time></div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : '<p class="muted-review">只留下了星级评分。</p>'}${review.images?.length ? `<div class="community-review-images">${review.images.map((src,index) => `<button type="button" data-review-image-id="${escapeHtml(review.id)}" data-review-image-index="${index}"><img src="${escapeHtml(src)}" alt="${escapeHtml(review.name || '用户')}点评照片 ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}</article>`).join('')}</div>` : '<p class="empty-review-copy">还没有审核通过的点评。你可以成为第一个留下真实体验的人。</p>'}
     </div>
     ${place.isDemo ? '<div class="detail-footnote">本条为首版界面演示数据，正式公开前请在后台替换为经过核实的真实地点。</div>' : ''}
   `;
@@ -546,7 +547,7 @@ function validateSubmissionStep(step) {
 }
 
 const MAX_PHOTOS = 8;
-const TARGET_PHOTO_BYTES = 150 * 1024;
+const TARGET_PHOTO_BYTES = 420 * 1024;
 const MAX_SOURCE_BYTES = 35 * 1024 * 1024;
 
 function blobToDataUrl(blob) {
@@ -589,8 +590,8 @@ async function compressPhoto(file) {
   const source = await decodeImage(file);
   const sourceWidth = source.naturalWidth || source.width;
   const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [1600, 1440, 1280, 1120, 960, 840, 720, 640, 560, 480, 400, 320, 256];
-  const qualities = [0.82, 0.74, 0.66, 0.58, 0.50, 0.44, 0.38, 0.32, 0.27, 0.23, 0.20, 0.16];
+  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
+  const qualities = [0.90, 0.86, 0.82, 0.78, 0.74, 0.70, 0.66, 0.60, 0.54, 0.48];
   let smallest = null;
   let smallestWidth = 0;
   let smallestHeight = 0;
@@ -632,14 +633,14 @@ async function compressPhoto(file) {
 
     // Final automatic fallback for unusually detailed/noisy photos.
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 192 / Math.max(sourceWidth, sourceHeight));
+    const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
     canvas.width = Math.max(1, Math.round(sourceWidth * scale));
     canvas.height = Math.max(1, Math.round(sourceHeight * scale));
     const context = canvas.getContext('2d', { alpha: false });
     context.fillStyle = '#fff';
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const fallback = await canvasToBlob(canvas, 0.12);
+    const fallback = await canvasToBlob(canvas, 0.46);
     if (!smallest || fallback.size < smallest.size) {
       smallest = fallback;
       smallestWidth = canvas.width;
@@ -772,12 +773,65 @@ async function submitPlace(event) {
   }
 }
 
+const MAX_REVIEW_PHOTOS = 3;
+
+function renderReviewPhotoPreview() {
+  const preview = $('#reviewPhotoPreview');
+  const count = $('#reviewPhotoCount');
+  if (!preview || !count) return;
+  count.textContent = `${state.reviewPhotos.length} / ${MAX_REVIEW_PHOTOS}`;
+  if (!state.reviewPhotos.length) {
+    preview.innerHTML = '<span class="photo-empty">尚未选择图片</span>';
+    return;
+  }
+  preview.innerHTML = state.reviewPhotos.map((photo, index) => `
+    <figure class="photo-item">
+      <img src="${photo.dataUrl}" alt="点评照片 ${index + 1}" />
+      <button type="button" class="photo-remove" data-review-photo-remove="${photo.id}" aria-label="删除第 ${index + 1} 张点评照片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <figcaption>${Math.ceil(photo.size / 1024)}KB · WebP</figcaption>
+    </figure>`).join('');
+}
+
+async function handleReviewPhotos(event) {
+  const input = event.target;
+  const files = [...input.files];
+  input.value = '';
+  if (!files.length) return;
+  const available = MAX_REVIEW_PHOTOS - state.reviewPhotos.length;
+  if (available <= 0) return showToast('点评最多上传 3 张图片');
+  const selected = files.slice(0, available);
+  const processing = $('#reviewPhotoProcessing');
+  const errors = [];
+  let added = 0;
+  for (let index = 0; index < selected.length; index += 1) {
+    processing.textContent = `正在处理点评照片：${index + 1} / ${selected.length}`;
+    try {
+      state.reviewPhotos.push(await compressPhoto(selected[index]));
+      added += 1;
+      renderReviewPhotoPreview();
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  processing.textContent = added ? `已添加 ${added} 张高清 WebP 图片。` : '';
+  if (errors.length) showToast(errors[0]);
+}
+
+function removeReviewPhoto(photoId) {
+  state.reviewPhotos = state.reviewPhotos.filter((photo) => photo.id !== photoId);
+  renderReviewPhotoPreview();
+  $('#reviewPhotoProcessing').textContent = state.reviewPhotos.length ? '可以继续添加或删除图片。' : '';
+}
+
 function openReviewModal(place) {
   const form = $('#reviewForm');
   form.reset();
   form.elements.placeId.value = place.id;
   form.elements.name.value = localStorage.getItem('nwm-review-name') || '';
   form.elements.email.value = localStorage.getItem('nwm-review-email') || '';
+  state.reviewPhotos = [];
+  renderReviewPhotoPreview();
+  $('#reviewPhotoProcessing').textContent = '';
   $('#reviewPlaceSummary').innerHTML = `<span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span><div><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.address || place.district || '南京')}</small></div>`;
   const feedback = $('#reviewFeedback');
   feedback.textContent = '';
@@ -793,6 +847,7 @@ async function submitReview(event) {
   const button = $('#reviewSubmitButton');
   const feedback = $('#reviewFeedback');
   const data = Object.fromEntries(new FormData(form).entries());
+  data.photos = state.reviewPhotos.map((photo) => photo.dataUrl);
   feedback.className = 'form-feedback';
   feedback.textContent = '';
   if (!data.rating) {
@@ -1023,6 +1078,12 @@ function wireEvents() {
   });
   $('#detailClose').addEventListener('click', closeDetail);
   $('#detailContent').addEventListener('click', (event) => {
+    const reviewButton = event.target.closest('[data-review-image-id]');
+    if (reviewButton && state.selected) {
+      const review = (state.selected.reviews || []).find((item) => item.id === reviewButton.dataset.reviewImageId);
+      if (review) openImageViewer(review.images || [], Number(reviewButton.dataset.reviewImageIndex), `${state.selected.name} · ${review.name || '社区点评'}`);
+      return;
+    }
     const button = event.target.closest('[data-view-image-index]');
     if (!button || !state.selected) return;
     openImageViewer(state.selected.images || [], Number(button.dataset.viewImageIndex), state.selected.name);
@@ -1049,6 +1110,11 @@ function wireEvents() {
   });
   $('#submissionForm').addEventListener('submit', submitPlace);
   $('#reviewForm').addEventListener('submit', submitReview);
+  $('#reviewPhotoInput').addEventListener('change', handleReviewPhotos);
+  $('#reviewPhotoPreview').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-review-photo-remove]');
+    if (button) removeReviewPhoto(button.dataset.reviewPhotoRemove);
+  });
   $('#reviewForm').addEventListener('change', (event) => {
     if (event.target.name !== 'rating') return;
     const ratingCopy = {

@@ -1,4 +1,4 @@
-import { mountLocationPicker } from './location-picker.js?v=3.6.0';
+import { mountLocationPicker } from './location-picker.js?v=3.7.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -199,6 +199,7 @@ function openCommunityReview(id) {
     <span class="status-pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel[item.status] || item.status)}</span>
     <div class="drawer-meta"><div><span>用户名</span><strong>${escapeHtml(item.reviewerName)}</strong></div><div><span>邮箱（不公开）</span><strong>${escapeHtml(item.reviewerEmail)}</strong></div><div><span>评分</span><strong class="admin-review-stars large">${stars}</strong></div><div><span>提交时间</span><strong>${new Date(item.createdAt).toLocaleString('zh-CN')}</strong></div></div>
     <div class="detail-section"><h4>点评内容</h4><p>${escapeHtml(item.comment || '用户只提交了星级评分。')}</p></div>
+    ${item.images?.length ? `<div class="detail-section"><h4>点评照片（${item.images.length} 张）</h4><div class="drawer-images review-moderation-images">${item.images.map((src,index) => `<a href="${escapeHtml(src)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(src)}" alt="点评照片 ${index+1}" /></a>`).join('')}</div></div>` : ''}
     ${place ? `<div class="detail-section"><h4>对应地点</h4><p>${escapeHtml(place.name)}<br>${escapeHtml(place.address || '')}</p></div>` : '<div class="detail-footnote">对应地点已下架或不存在。</div>'}
     <form class="admin-form" id="communityReviewModerationForm" style="margin-top:20px">
       <label><span>审核备注（仅后台）</span><textarea name="moderationNote" rows="3">${escapeHtml(item.moderationNote || '')}</textarea></label>
@@ -318,7 +319,7 @@ function openPlaceUpdateSubmission(item) {
     ${proposed.images?.length ? `<div class="drawer-images editable-review-images">${proposed.images.map((src,index) => `<a href="${escapeHtml(src)}" target="_blank"><img src="${escapeHtml(src)}" alt="修改后照片 ${index+1}" /></a>`).join('')}</div>` : '<div class="detail-footnote">修改后不保留任何照片。</div>'}
     ${canModerate ? `<form class="admin-form" id="reviewForm" style="margin-top:20px">
       <input name="description" type="hidden" value="${escapeHtml(proposed.description || '')}" />
-      <input name="lng" type="hidden" value="${proposed.lng ?? ''}" /><input name="lat" type="hidden" value="${proposed.lat ?? ''}" /><input name="address" type="hidden" value="${escapeHtml(proposed.address || '')}" /><input name="district" type="hidden" value="${escapeHtml(proposed.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(proposed.amapPoiId || '')}" />
+      <label><span>详细地址 *</span><input name="address" data-location-address required value="${escapeHtml(proposed.address || '')}" /></label><input name="lng" type="hidden" value="${proposed.lng ?? ''}" /><input name="lat" type="hidden" value="${proposed.lat ?? ''}" /><input name="district" type="hidden" value="${escapeHtml(proposed.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(proposed.amapPoiId || '')}" />
       ${(proposed.workModes || []).map((tag) => `<input type="checkbox" name="suggestedTag" value="${escapeHtml(tag)}" checked hidden />`).join('')}
       <div class="check-row"><label class="check"><input name="featured" type="checkbox" ${proposed.featured ? 'checked' : ''}/><span>编辑精选</span></label><label class="check"><input name="verified" type="checkbox" ${proposed.verified ? 'checked' : ''}/><span>已验证</span></label></div>
       <label><span>审核备注</span><textarea name="reviewNote" rows="3" placeholder="需要补充或拒绝时填写">${escapeHtml(item.reviewNote || '')}</textarea></label>
@@ -383,7 +384,7 @@ function openSubmission(id) {
           <section class="location-picker compact" id="reviewLocationPicker">
             <div class="location-search-row"><input type="search" data-location-search placeholder="输入店名重新搜索" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
             <p class="location-status" data-location-status>当前位置来自提交者。</p><div class="location-search-results" data-location-results hidden></div><div class="location-picker-map" data-location-map></div><div class="location-summary" data-location-summary></div>
-            <input name="lng" type="hidden" value="${item.lng ?? ''}" /><input name="lat" type="hidden" value="${item.lat ?? ''}" /><input name="address" type="hidden" value="${escapeHtml(item.address || '')}" /><input name="district" type="hidden" value="${escapeHtml(item.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(item.amapPoiId || '')}" />
+            <label><span>详细地址 *</span><input name="address" data-location-address required value="${escapeHtml(item.address || '')}" /></label><input name="lng" type="hidden" value="${item.lng ?? ''}" /><input name="lat" type="hidden" value="${item.lat ?? ''}" /><input name="district" type="hidden" value="${escapeHtml(item.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(item.amapPoiId || '')}" />
           </section>
         </details>
         <label><span>公开展示说明（可修改）</span><textarea name="description" rows="4">${escapeHtml(item.description || '')}</textarea></label>
@@ -460,7 +461,7 @@ function placeForm(place = {}) {
         <input name="lat" type="hidden" required value="${place.lat ?? ''}" />
         <input name="amapPoiId" type="hidden" value="${escapeHtml(place.amapPoiId || '')}" />
       </section>
-      <label><span>地图识别地址 *</span><input name="address" required readonly value="${escapeHtml(place.address || '')}" /></label>
+      <label><span>详细地址 *</span><input name="address" data-location-address required value="${escapeHtml(place.address || '')}" placeholder="手动点地图后，请直接填写地址" /></label>
       <label><span>位置备注（选填）</span><input name="placeNote" maxlength="500" value="${escapeHtml(place.placeNote || '')}" placeholder="例如：商场三楼北侧、从西门进入更近" /></label>
       <label><span>楼层、入口或座位区域补充</span><input name="addressDetail" placeholder="可补充到公开地址后面" /></label>
       <div class="form-grid three-col"><label><span>区域</span><input name="district" value="${escapeHtml(place.district || '')}" /></label><label><span>地铁站</span><input name="metroStation" value="${escapeHtml(place.metroStation || '')}" /></label><label><span>步行分钟</span><input name="metroMinutes" type="number" min="0" max="90" value="${place.metroMinutes ?? ''}" /></label></div>
@@ -613,7 +614,7 @@ async function createContributor(event) {
 }
 
 const MAX_PORTAL_PHOTOS = 8;
-const TARGET_PORTAL_PHOTO_BYTES = 150 * 1024;
+const TARGET_PORTAL_PHOTO_BYTES = 420 * 1024;
 const MAX_PORTAL_SOURCE_BYTES = 35 * 1024 * 1024;
 
 function portalBlobToDataUrl(blob) {
@@ -653,8 +654,8 @@ async function compressPortalPhoto(file) {
   const source = await decodePortalImage(file);
   const sourceWidth = source.naturalWidth || source.width;
   const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [1600, 1440, 1280, 1120, 960, 840, 720, 640, 560, 480, 400, 320, 256];
-  const qualities = [0.82, 0.74, 0.66, 0.58, 0.50, 0.44, 0.38, 0.32, 0.27, 0.23, 0.20, 0.16];
+  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
+  const qualities = [0.90, 0.86, 0.82, 0.78, 0.74, 0.70, 0.66, 0.60, 0.54, 0.48];
   let smallest = null;
   try {
     for (const maxDimension of dimensions) {
@@ -679,14 +680,14 @@ async function compressPortalPhoto(file) {
       }
     }
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 192 / Math.max(sourceWidth, sourceHeight));
+    const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
     canvas.width = Math.max(1, Math.round(sourceWidth * scale));
     canvas.height = Math.max(1, Math.round(sourceHeight * scale));
     const context = canvas.getContext('2d', { alpha: false });
     context.fillStyle = '#fff';
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const fallback = await portalCanvasToBlob(canvas, 0.12);
+    const fallback = await portalCanvasToBlob(canvas, 0.46);
     if (!smallest || fallback.size < smallest.size) smallest = fallback;
   } finally {
     source.close?.();

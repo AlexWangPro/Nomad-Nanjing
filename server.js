@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '3.7.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -774,11 +774,11 @@ function verifyPassword(password, salt, hash) {
   return safeEqual(derived, hash);
 }
 
-async function convertToWebpUnderLimit(buffer, targetBytes = 150 * 1024) {
+async function convertToWebpUnderLimit(buffer, targetBytes = 420 * 1024) {
   // Mobile photos can be very large and visually complex. Progressively reduce
   // both dimensions and quality until the WebP fits; users never need to crop.
-  const dimensions = [1600, 1440, 1280, 1120, 960, 840, 720, 640, 560, 480, 400, 320, 256];
-  const qualities = [82, 74, 66, 58, 50, 44, 38, 32, 27, 23, 20, 16];
+  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
+  const qualities = [90, 86, 82, 78, 74, 70, 66, 60, 54, 48];
   let smallest = null;
 
   for (const dimension of dimensions) {
@@ -810,8 +810,8 @@ async function convertToWebpUnderLimit(buffer, targetBytes = 150 * 1024) {
   const fallback = await sharp(buffer, { failOn: 'error', limitInputPixels: 80_000_000 })
     .rotate()
     .flatten({ background: '#ffffff' })
-    .resize({ width: 192, height: 192, fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 12, effort: 6, smartSubsample: true })
+    .resize({ width: 720, height: 720, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 46, effort: 6, smartSubsample: true })
     .toBuffer();
   if (!smallest || fallback.length < smallest.length) smallest = fallback;
   if (smallest && smallest.length <= targetBytes) return smallest;
@@ -1164,6 +1164,7 @@ function publicPlace(place, db = null) {
       name: review.reviewerName,
       rating: review.rating,
       comment: review.comment,
+      images: Array.isArray(review.images) ? review.images.slice(0, 3) : [],
       createdAt: review.approvedAt || review.createdAt
     }))
   };
@@ -1615,7 +1616,7 @@ async function handleApi(req, res, url) {
     if (rateLimited(req, 'place-review', 6, 60 * 60 * 1000)) {
       return json(res, 429, { error: '点评提交过于频繁，请稍后再试。' });
     }
-    const body = await parseBody(req, 300 * 1024);
+    const body = await parseBody(req, 8 * 1024 * 1024);
     if (cleanString(body.website, 200)) return json(res, 400, { error: '提交验证失败。' });
     const db = readDb();
     const place = db.places.find((item) => item.id === publicReviewMatch[1] && !item.archived);
@@ -1629,6 +1630,17 @@ async function handleApi(req, res, url) {
     if (!reviewerEmail) errors.push('有效邮箱');
     if (rating === null) errors.push('1–5 星评分');
     if (errors.length) return json(res, 400, { error: `请补充：${errors.join('、')}。` });
+    const incomingPhotos = Array.isArray(body.photos) ? body.photos.slice(0, 3) : [];
+    const reviewImages = [];
+    try {
+      for (const photo of incomingPhotos) {
+        const saved = await saveImage(photo);
+        if (saved) reviewImages.push(saved);
+      }
+    } catch (error) {
+      for (const imageUrl of reviewImages) deleteMediaByUrl(imageUrl);
+      throw error;
+    }
     const review = {
       id: id('review'),
       status: 'pending',
@@ -1638,6 +1650,7 @@ async function handleApi(req, res, url) {
       reviewerEmail,
       rating,
       comment,
+      images: reviewImages,
       moderationNote: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1722,6 +1735,10 @@ async function handleApi(req, res, url) {
     review.updatedAt = new Date().toISOString();
     review.reviewedBy = user.email;
     review.approvedAt = status === 'approved' ? new Date().toISOString() : null;
+    if (status === 'rejected' && Array.isArray(review.images) && review.images.length) {
+      for (const imageUrl of review.images) deleteMediaByUrl(imageUrl);
+      review.images = [];
+    }
     db.auditLog.unshift({ id: id('log'), action: `review_${status}`, actor: user.email, targetId: review.id, placeId: review.placeId, createdAt: new Date().toISOString() });
     writeDb(db);
     return json(res, 200, { ok: true, review });

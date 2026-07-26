@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.6.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.7.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -107,10 +107,10 @@
                   <div class="location-search-row"><input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
                   <p class="location-status" data-location-status>输入店名搜索，或直接点击地图自行标注。</p>
                   <div class="location-search-results" data-location-results hidden></div>
-                  <div class="manual-location-fields form-grid two-col"><label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name maxlength="120" required placeholder="搜索后自动填写，也可自行输入" /></label><label><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧" /></label></div>
+                  <div class="manual-location-fields form-grid two-col"><label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name maxlength="120" required placeholder="搜索后自动填写，也可自行输入" /></label><label><span>详细地址 *</span><input name="address" data-location-address maxlength="240" required placeholder="手动点地图后，请直接填写地址" /></label><label class="manual-location-note"><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧" /></label></div>
                   <div class="location-picker-map" data-location-map></div>
                   <div class="location-summary" data-location-summary></div>
-                  <input name="lng" type="hidden" required /><input name="lat" type="hidden" required /><input name="amapPoiId" type="hidden" /><input name="address" type="hidden" required /><input name="district" type="hidden" />
+                  <input name="lng" type="hidden" required /><input name="lat" type="hidden" required /><input name="amapPoiId" type="hidden" /><input name="district" type="hidden" />
                 </section>
                 <div class="form-grid three-col">
                   <label><span>到访时间 *</span><select name="visitRecency" required><option value="today">今天</option><option value="week" selected>最近一周</option><option value="month">最近一个月</option><option value="older">更早</option></select></label>
@@ -129,7 +129,7 @@
                 </div>
                 <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="4" placeholder="只写地图和选项没有覆盖的内容。"></textarea></label>
                 <div class="upload-field">
-                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转为 WebP 并智能压缩至约 150KB，无需手动裁剪。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
+                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转为高清 WebP，最长边约 2200px，单张约 420KB。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
                   <input id="portalPhotoInput" type="file" accept="image/*" multiple hidden />
                   <label class="photo-picker-button" for="portalPhotoInput"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>从手机相册多选图片</span></label>
                   <p class="photo-processing" id="portalPhotoProcessing" role="status"></p>
@@ -150,6 +150,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=3.6.0"></script>
+  <script type="module" src="/admin.js?v=3.7.0"></script>
 </body>
 </html>
