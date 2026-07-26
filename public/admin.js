@@ -1,4 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=3.7.0';
+import { mountLocationPicker } from './location-picker.js?v=3.8.0';
+import { compressImageForUpload } from './image-compression.js?v=3.8.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -614,88 +615,9 @@ async function createContributor(event) {
 }
 
 const MAX_PORTAL_PHOTOS = 8;
-const TARGET_PORTAL_PHOTO_BYTES = 420 * 1024;
-const MAX_PORTAL_SOURCE_BYTES = 35 * 1024 * 1024;
-
-function portalBlobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('图片读取失败'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function decodePortalImage(file) {
-  if ('createImageBitmap' in window) {
-    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {}
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.decoding = 'async';
-    image.src = url;
-    await image.decode();
-    return image;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function portalCanvasToBlob(canvas, quality) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('当前浏览器无法生成 WebP 图片')), 'image/webp', quality);
-  });
-}
 
 async function compressPortalPhoto(file) {
-  if (!file.type.startsWith('image/')) throw new Error(`${file.name} 不是图片文件`);
-  if (file.size > MAX_PORTAL_SOURCE_BYTES) throw new Error(`${file.name} 超过 35MB，请换一张照片`);
-  const source = await decodePortalImage(file);
-  const sourceWidth = source.naturalWidth || source.width;
-  const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
-  const qualities = [0.90, 0.86, 0.82, 0.78, 0.74, 0.70, 0.66, 0.60, 0.54, 0.48];
-  let smallest = null;
-  try {
-    for (const maxDimension of dimensions) {
-      const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
-      const width = Math.max(1, Math.round(sourceWidth * scale));
-      const height = Math.max(1, Math.round(sourceHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext('2d', { alpha: false });
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, width, height);
-      context.drawImage(source, 0, 0, width, height);
-      for (const quality of qualities) {
-        const blob = await portalCanvasToBlob(canvas, quality);
-        if (!smallest || blob.size < smallest.size) smallest = blob;
-        if (blob.size <= TARGET_PORTAL_PHOTO_BYTES) {
-          return { id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`, dataUrl: await portalBlobToDataUrl(blob), size: blob.size };
-        }
-      }
-    }
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-    const context = canvas.getContext('2d', { alpha: false });
-    context.fillStyle = '#fff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const fallback = await portalCanvasToBlob(canvas, 0.46);
-    if (!smallest || fallback.size < smallest.size) smallest = fallback;
-  } finally {
-    source.close?.();
-  }
-  if (smallest && smallest.size <= TARGET_PORTAL_PHOTO_BYTES) {
-    return { id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`, dataUrl: await portalBlobToDataUrl(smallest), size: smallest.size };
-  }
-  throw new Error(`${file.name} 处理失败，请重新选择后再试`);
+  return compressImageForUpload(file, { idPrefix: 'photo' });
 }
 
 function renderPortalPhotoPreview() {
@@ -709,7 +631,7 @@ function renderPortalPhotoPreview() {
     <figure class="photo-item">
       <img src="${photo.dataUrl}" alt="现场图片 ${index + 1}" />
       <button type="button" class="photo-remove" data-portal-photo-remove="${photo.id}" aria-label="删除第 ${index + 1} 张图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-      <figcaption>${Math.ceil(photo.size / 1024)}KB · WebP</figcaption>
+      <figcaption>${photo.width}×${photo.height} · ${Math.ceil(photo.size / 1024)}KB · 上传后 WebP</figcaption>
     </figure>
   `).join('');
 }
@@ -717,7 +639,7 @@ function renderPortalPhotoPreview() {
 async function handlePortalPhotos(event) {
   const input = event.target;
   const available = MAX_PORTAL_PHOTOS - state.portalPhotos.length;
-  const selected = [...input.files];
+  const selected = Array.from(input.files || []);
   input.value = '';
   if (!selected.length) return;
   if (available <= 0) return feedback($('#portalSubmitFeedback'), '最多上传 8 张图片。', 'error');
@@ -726,7 +648,7 @@ async function handlePortalPhotos(event) {
   const errors = [];
   let added = 0;
   for (let index = 0; index < files.length; index += 1) {
-    processing.textContent = `正在转成 WebP 并压缩：${index + 1} / ${files.length}`;
+    processing.textContent = `正在上传并压缩：${index + 1} / ${files.length}`;
     try {
       state.portalPhotos.push(await compressPortalPhoto(files[index]));
       added += 1;
@@ -735,7 +657,7 @@ async function handlePortalPhotos(event) {
       errors.push(error.message);
     }
   }
-  processing.textContent = added ? `已添加 ${added} 张，均已转成 WebP 并压缩完成。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，服务器将统一保存为约 100KB WebP。` : '';
   if (errors.length) feedback($('#portalSubmitFeedback'), errors[0], 'error');
 }
 
@@ -758,7 +680,7 @@ function renderPlaceEditorPhotoPreview() {
     <figure class="photo-item">
       <img src="${escapeHtml(photo.dataUrl)}" alt="店面照片 ${index + 1}" />
       <button type="button" class="photo-remove" data-place-photo-remove="${escapeHtml(photo.id)}" aria-label="删除第 ${index + 1} 张图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-      <figcaption>${photo.existing ? '已发布 · 点击删除' : `${Math.ceil(photo.size / 1024)}KB · 新图片`}</figcaption>
+      <figcaption>${photo.existing ? '已发布 · 点击删除' : `${photo.width}×${photo.height} · ${Math.ceil(photo.size / 1024)}KB · 上传后 WebP`}</figcaption>
     </figure>
   `).join('');
 }
@@ -766,14 +688,14 @@ function renderPlaceEditorPhotoPreview() {
 async function handlePlaceEditorPhotos(event) {
   const input = event.target;
   const available = MAX_PORTAL_PHOTOS - state.placeEditorPhotos.length;
-  const selected = [...input.files];
+  const selected = Array.from(input.files || []);
   input.value = '';
   if (!selected.length) return;
   if (available <= 0) return feedback($('#placeFeedback'), '最多保留 8 张图片，请先删除后再上传。', 'error');
   const files = selected.slice(0, available);
   const processing = $('#placePhotoProcessing');
   for (let index = 0; index < files.length; index += 1) {
-    processing.textContent = `正在处理图片：${index + 1} / ${files.length}`;
+    processing.textContent = `正在上传并压缩图片：${index + 1} / ${files.length}`;
     try {
       const photo = await compressPortalPhoto(files[index]);
       state.placeEditorPhotos.push({ ...photo, existing: false, url: '' });

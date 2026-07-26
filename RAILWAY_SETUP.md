@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.7 Railway 部署说明
+# Nomad Nanjing v3.8 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.7 之前：
+在部署 v3.8 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -23,11 +23,11 @@ RAILWAY_VOLUME_MOUNT_PATH=/data
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.7 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v3.8 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
-git commit -m "Improve photo quality and add review photos"
+git commit -m "Fix mobile uploads and target 100KB WebP"
 git push
 ```
 
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.7.0",
+  "version": "3.8.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -103,8 +103,9 @@ storage.persistentVolume = true
 
 用户上传图片仍会：
 
-- 自动转 WebP
-- 每张自动转 WebP，并智能压缩到约 420KB 内（无需裁剪）
+- 手机原图逐张上传到同源 `/api/images/compress` 接口，不依赖手机 Canvas 或 WebP 编码能力
+- 服务器使用 Sharp 转换为 WebP，常规照片约 88–114KB，目标约 100KB
+- 若服务器临时处理失败，前端再启用 JPEG/WebP 本地备用通道
 - 地点照片最多 8 张；点评照片最多 3 张
 
 应用不再生成 `/data/uploads` 文件。图片二进制直接写入 SQLite 的 `media` 表，并通过 `/media/<id>.webp` 提供给前端。
@@ -136,6 +137,6 @@ storage.persistentVolume = true
 
 部署后检查 `/manifest.webmanifest`、`/logo.svg` 和 `/icons/icon-512.png`。无需新增 Railway 环境变量。
 
-## v3.7 说明
+## v3.8 说明
 
-本次升级不需要新增环境变量。地点与点评数据继续保存在现有 Railway Volume 的 SQLite 数据库中。
+本次升级不需要新增环境变量。新增的图片压缩接口与网站同域运行，不需要额外服务。地点与点评数据继续保存在现有 Railway Volume 的 SQLite 数据库中。

@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.7.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.8.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -168,7 +168,7 @@
         <label><span>其他注意事项（选填）</span><textarea name="evidenceNote" maxlength="800" rows="3" placeholder="例如：店员确认可以长时间使用电脑。"></textarea></label>
         <div class="upload-field">
           <div class="upload-heading">
-            <div><strong>现场图片（选填）</strong><span>最多 8 张；自动转为高清 WebP，最长边约 2200px，单张约 420KB。</span></div>
+            <div><strong>现场图片（选填）</strong><span>最多 8 张；手机端自动压缩，服务器统一保存为约 100KB WebP。</span></div>
             <span class="photo-count" id="photoCount">0 / 8</span>
           </div>
           <input id="photoInput" name="photos" type="file" accept="image/*" multiple hidden />
@@ -226,7 +226,7 @@
       </div>
       <label class="review-field review-comment-field"><span>点评内容 <em>选填</em></span><textarea name="comment" maxlength="1200" rows="5" placeholder="例如：工作日下午安静，靠墙座位有插座；周末下午可能满座。"></textarea><small>可以只打星，也可以写下对其他办公者有帮助的信息。</small></label>
       <section class="review-photo-upload">
-        <div class="review-photo-heading"><div><strong>点评照片 <em>选填</em></strong><span>最多 3 张，自动转为高清 WebP；照片与点评一起审核。</span></div><span id="reviewPhotoCount">0 / 3</span></div>
+        <div class="review-photo-heading"><div><strong>点评照片 <em>选填</em></strong><span>最多 3 张；服务器统一保存为约 100KB WebP，照片与点评一起审核。</span></div><span id="reviewPhotoCount">0 / 3</span></div>
         <input id="reviewPhotoInput" type="file" accept="image/*" multiple hidden />
         <label class="review-photo-button" for="reviewPhotoInput"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>从手机相册选择照片</span></label>
         <p class="photo-processing" id="reviewPhotoProcessing" role="status"></p>
@@ -309,6 +309,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.7.0"></script>
+  <script type="module" src="/app.js?v=3.8.0"></script>
 </body>
 </html>

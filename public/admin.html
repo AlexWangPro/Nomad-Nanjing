@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.7.0" />
+  <link rel="stylesheet" href="/styles.css?v=3.8.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -129,7 +129,7 @@
                 </div>
                 <label><span>补充感受（选填）</span><textarea name="experienceNote" maxlength="1600" rows="4" placeholder="只写地图和选项没有覆盖的内容。"></textarea></label>
                 <div class="upload-field">
-                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张，自动转为高清 WebP，最长边约 2200px，单张约 420KB。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
+                  <div class="upload-heading"><div><strong>现场图片（选填）</strong><span>最多 8 张；手机端自动压缩，服务器统一保存为约 100KB WebP。</span></div><span class="photo-count" id="portalPhotoCount">0 / 8</span></div>
                   <input id="portalPhotoInput" type="file" accept="image/*" multiple hidden />
                   <label class="photo-picker-button" for="portalPhotoInput"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>从手机相册多选图片</span></label>
                   <p class="photo-processing" id="portalPhotoProcessing" role="status"></p>
@@ -150,6 +150,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=3.7.0"></script>
+  <script type="module" src="/admin.js?v=3.8.0"></script>
 </body>
 </html>

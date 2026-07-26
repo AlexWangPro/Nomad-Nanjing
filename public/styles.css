@@ -1132,7 +1132,7 @@ body.admin-page { overflow: auto; background: #eef1ed; }
 }
 
 
-/* v3.7 clearer photos, review uploads, and manual address entry */
+/* v3.8 mobile-safe image compression around 100KB */
 .detail-photo img, .community-review-images img, .image-viewer-stage img { image-rendering: auto; }
 .image-viewer-frame img { max-width: min(1600px, 98vw); max-height: 86vh; }
 .manual-location-fields .manual-location-note { grid-column: 1 / -1; }

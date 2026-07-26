@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.7.0';
+const APP_VERSION = '3.8.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -670,29 +670,50 @@ function text(res, status, payload, contentType = 'text/plain; charset=utf-8') {
   res.end(payload);
 }
 
-function parseBody(req, maxBytes = 10 * 1024 * 1024) {
+function readRequestBuffer(req, maxBytes) {
   return new Promise((resolve, reject) => {
+    const declaredLength = Number(req.headers['content-length'] || 0);
+    if (declaredLength > maxBytes) {
+      reject(Object.assign(new Error('上传内容过大。'), { statusCode: 413 }));
+      req.resume();
+      return;
+    }
+
     const chunks = [];
     let total = 0;
+    let settled = false;
     req.on('data', (chunk) => {
+      if (settled) return;
       total += chunk.length;
       if (total > maxBytes) {
-        reject(Object.assign(new Error('Request too large'), { statusCode: 413 }));
-        req.destroy();
+        settled = true;
+        reject(Object.assign(new Error('上传内容过大。'), { statusCode: 413 }));
+        req.resume();
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
-      if (!chunks.length) return resolve({});
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(Object.assign(new Error('Invalid JSON'), { statusCode: 400 }));
-      }
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks));
     });
-    req.on('error', reject);
+    req.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
+}
+
+async function parseBody(req, maxBytes = 10 * 1024 * 1024) {
+  const buffer = await readRequestBuffer(req, maxBytes);
+  if (!buffer.length) return {};
+  try {
+    return JSON.parse(buffer.toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 });
+  }
 }
 
 function id(prefix) {
@@ -774,15 +795,44 @@ function verifyPassword(password, salt, hash) {
   return safeEqual(derived, hash);
 }
 
-async function convertToWebpUnderLimit(buffer, targetBytes = 420 * 1024) {
-  // Mobile photos can be very large and visually complex. Progressively reduce
-  // both dimensions and quality until the WebP fits; users never need to crop.
-  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
-  const qualities = [90, 86, 82, 78, 74, 70, 66, 60, 54, 48];
-  let smallest = null;
+const TARGET_IMAGE_BYTES = 100 * 1024;
+const MIN_IMAGE_BYTES = 88 * 1024;
+const MAX_IMAGE_BYTES = 114 * 1024;
+const MAX_SOURCE_IMAGE_BYTES = 35 * 1024 * 1024;
 
-  for (const dimension of dimensions) {
-    const base = sharp(buffer, { failOn: 'error', limitInputPixels: 80_000_000 })
+function imageCandidateScore(candidate, dimension) {
+  const sizeDistance = Math.abs(candidate.buffer.length - TARGET_IMAGE_BYTES) / TARGET_IMAGE_BYTES;
+  const qualityPenalty = Math.max(0, 58 - candidate.quality) * 0.035;
+  const dimensionPenalty = Math.max(0, (1280 - dimension) / 1280) * 0.35;
+  const outsidePenalty = candidate.buffer.length < MIN_IMAGE_BYTES
+    ? 0.65 + ((MIN_IMAGE_BYTES - candidate.buffer.length) / MIN_IMAGE_BYTES)
+    : candidate.buffer.length > MAX_IMAGE_BYTES
+      ? 1.8 + ((candidate.buffer.length - MAX_IMAGE_BYTES) / MAX_IMAGE_BYTES)
+      : 0;
+  return sizeDistance + qualityPenalty + dimensionPenalty + outsidePenalty;
+}
+
+async function convertToWebpAroundTarget(buffer) {
+  const metadata = await sharp(buffer, { failOn: 'error', limitInputPixels: 100_000_000 }).metadata();
+  const inputMaxDimension = Math.max(Number(metadata.width || 0), Number(metadata.height || 0));
+
+  // A browser or the dedicated mobile upload endpoint may already have produced
+  // a suitable WebP. Avoid a second lossy encode in that case.
+  if (
+    metadata.format === 'webp' &&
+    buffer.length >= MIN_IMAGE_BYTES &&
+    buffer.length <= MAX_IMAGE_BYTES &&
+    inputMaxDimension <= 2200
+  ) {
+    return buffer;
+  }
+
+  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
+  let best = null;
+  let bestScore = Infinity;
+
+  const encodeLossy = async (dimension, quality) => {
+    const output = await sharp(buffer, { failOn: 'error', limitInputPixels: 100_000_000 })
       .rotate()
       .flatten({ background: '#ffffff' })
       .resize({
@@ -791,30 +841,107 @@ async function convertToWebpUnderLimit(buffer, targetBytes = 420 * 1024) {
         fit: 'inside',
         withoutEnlargement: true,
         fastShrinkOnLoad: true
-      });
-
-    for (const quality of qualities) {
-      const output = await base.clone().webp({
+      })
+      .webp({
         quality,
-        effort: 4,
+        effort: 5,
         smartSubsample: true,
-        alphaQuality: Math.max(20, quality)
-      }).toBuffer();
-      if (!smallest || output.length < smallest.length) smallest = output;
-      if (output.length <= targetBytes) return output;
+        alphaQuality: Math.max(35, quality)
+      })
+      .toBuffer();
+    return { buffer: output, quality, mode: 'lossy' };
+  };
+
+  const encodeNearLossless = async (dimension, quality) => {
+    const output = await sharp(buffer, { failOn: 'error', limitInputPixels: 100_000_000 })
+      .rotate()
+      .flatten({ background: '#ffffff' })
+      .resize({
+        width: dimension,
+        height: dimension,
+        fit: 'inside',
+        withoutEnlargement: true,
+        fastShrinkOnLoad: true
+      })
+      .webp({ quality, nearLossless: true, effort: 5 })
+      .toBuffer();
+    return { buffer: output, quality, mode: 'near-lossless' };
+  };
+
+  const remember = (candidate, dimension) => {
+    const score = imageCandidateScore(candidate, dimension);
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  };
+
+  for (const dimension of dimensions) {
+    const records = [];
+    const high = await encodeLossy(dimension, 96);
+    records.push(high);
+    remember(high, dimension);
+
+    // Very simple images can remain tiny even at maximum lossy quality. Try
+    // near-lossless WebP so they are not unnecessarily reduced to 20–30KB.
+    if (high.buffer.length < MIN_IMAGE_BYTES) {
+      for (const quality of [100, 92, 84, 76, 68, 58, 48]) {
+        const candidate = await encodeNearLossless(dimension, quality);
+        records.push(candidate);
+        remember(candidate, dimension);
+      }
+      const closest = records.sort((a, b) => {
+        const aDistance = Math.abs(a.buffer.length - TARGET_IMAGE_BYTES);
+        const bDistance = Math.abs(b.buffer.length - TARGET_IMAGE_BYTES);
+        return aDistance === bDistance ? b.quality - a.quality : aDistance - bDistance;
+      })[0];
+      if (closest.buffer.length >= MIN_IMAGE_BYTES && closest.buffer.length <= MAX_IMAGE_BYTES) {
+        return closest.buffer;
+      }
+      // Smaller dimensions cannot add detail or increase a low-complexity file.
+      break;
+    }
+
+    const low = await encodeLossy(dimension, 34);
+    records.push(low);
+    remember(low, dimension);
+    if (low.buffer.length > MAX_IMAGE_BYTES) continue;
+
+    let lowQuality = 34;
+    let highQuality = 96;
+    for (let index = 0; index < 8 && lowQuality <= highQuality; index += 1) {
+      const quality = Math.round((lowQuality + highQuality) / 2);
+      const candidate = await encodeLossy(dimension, quality);
+      records.push(candidate);
+      remember(candidate, dimension);
+      if (candidate.buffer.length < TARGET_IMAGE_BYTES) lowQuality = quality + 1;
+      else highQuality = quality - 1;
+    }
+
+    const closest = records.sort((a, b) => {
+      const aDistance = Math.abs(a.buffer.length - TARGET_IMAGE_BYTES);
+      const bDistance = Math.abs(b.buffer.length - TARGET_IMAGE_BYTES);
+      return aDistance === bDistance ? b.quality - a.quality : aDistance - bDistance;
+    })[0];
+
+    if (
+      closest.buffer.length >= MIN_IMAGE_BYTES &&
+      closest.buffer.length <= MAX_IMAGE_BYTES &&
+      closest.quality >= 55
+    ) {
+      return closest.buffer;
     }
   }
 
-  // Extremely noisy images are given one final tiny fallback rather than
-  // asking the user to crop them manually.
-  const fallback = await sharp(buffer, { failOn: 'error', limitInputPixels: 80_000_000 })
+  if (best?.buffer && best.buffer.length <= MAX_IMAGE_BYTES) return best.buffer;
+
+  const fallback = await sharp(buffer, { failOn: 'error', limitInputPixels: 100_000_000 })
     .rotate()
     .flatten({ background: '#ffffff' })
     .resize({ width: 720, height: 720, fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 46, effort: 6, smartSubsample: true })
+    .webp({ quality: 32, effort: 6, smartSubsample: true })
     .toBuffer();
-  if (!smallest || fallback.length < smallest.length) smallest = fallback;
-  if (smallest && smallest.length <= targetBytes) return smallest;
+  if (fallback.length <= MAX_IMAGE_BYTES) return fallback;
 
   throw Object.assign(new Error('这张图片处理失败，请重新选择后再试。'), { statusCode: 413 });
 }
@@ -824,13 +951,13 @@ async function saveImage(dataUrl) {
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
   if (!match) throw Object.assign(new Error('仅支持 JPG、PNG 或 WebP 图片。'), { statusCode: 400 });
   const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 35 * 1024 * 1024) {
+  if (buffer.length > MAX_SOURCE_IMAGE_BYTES) {
     throw Object.assign(new Error('单张原始图片不能超过 35MB。'), { statusCode: 413 });
   }
 
   let webp;
   try {
-    webp = await convertToWebpUnderLimit(buffer);
+    webp = await convertToWebpAroundTarget(buffer);
   } catch (error) {
     if (error.statusCode) throw error;
     throw Object.assign(new Error('图片处理失败，请换一张图片后重试。'), { statusCode: 400 });
@@ -1470,6 +1597,39 @@ async function handleApi(req, res, url) {
         mediaCount: Number(mediaRow?.count || 0),
         mediaBytes: Number(mediaRow?.bytes || 0)
       }
+    });
+  }
+
+
+  if (url.pathname === '/api/images/compress' && req.method === 'POST') {
+    if (rateLimited(req, 'image-compress', 48, 60 * 60 * 1000)) {
+      return json(res, 429, { error: '图片处理过于频繁，请稍后再试。' });
+    }
+    const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (contentType && !contentType.startsWith('image/') && contentType !== 'application/octet-stream') {
+      return json(res, 415, { error: '请选择 JPG、PNG、WebP 或手机相册中的照片。' });
+    }
+    const source = await readRequestBuffer(req, MAX_SOURCE_IMAGE_BYTES);
+    if (!source.length) return json(res, 400, { error: '没有收到图片文件。' });
+
+    let webp;
+    try {
+      webp = await convertToWebpAroundTarget(source);
+    } catch (error) {
+      if (error.statusCode) throw error;
+      throw Object.assign(new Error('服务器无法读取这张手机照片，请换一张后重试。'), { statusCode: 400 });
+    }
+    const metadata = await sharp(webp).metadata();
+    return json(res, 200, {
+      ok: true,
+      dataUrl: `data:image/webp;base64,${webp.toString('base64')}`,
+      size: webp.length,
+      width: Number(metadata.width || 0),
+      height: Number(metadata.height || 0),
+      type: 'image/webp',
+      targetBytes: TARGET_IMAGE_BYTES,
+      minBytes: MIN_IMAGE_BYTES,
+      maxBytes: MAX_IMAGE_BYTES
     });
   }
 

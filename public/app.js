@@ -1,4 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=3.7.0';
+import { mountLocationPicker } from './location-picker.js?v=3.8.0';
+import { compressImageForUpload } from './image-compression.js?v=3.8.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -547,120 +548,9 @@ function validateSubmissionStep(step) {
 }
 
 const MAX_PHOTOS = 8;
-const TARGET_PHOTO_BYTES = 420 * 1024;
-const MAX_SOURCE_BYTES = 35 * 1024 * 1024;
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('图片读取失败'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function decodeImage(file) {
-  if ('createImageBitmap' in window) {
-    try {
-      return await createImageBitmap(file, { imageOrientation: 'from-image' });
-    } catch {}
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.decoding = 'async';
-    image.src = url;
-    await image.decode();
-    return image;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function canvasToBlob(canvas, quality) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('当前浏览器无法生成 WebP 图片')), 'image/webp', quality);
-  });
-}
 
 async function compressPhoto(file) {
-  if (!file.type.startsWith('image/')) throw new Error(`${file.name} 不是图片文件`);
-  if (file.size > MAX_SOURCE_BYTES) throw new Error(`${file.name} 超过 35MB，请换一张照片`);
-
-  const source = await decodeImage(file);
-  const sourceWidth = source.naturalWidth || source.width;
-  const sourceHeight = source.naturalHeight || source.height;
-  const dimensions = [2200, 2048, 1920, 1760, 1600, 1440, 1280, 1120, 960, 840, 720];
-  const qualities = [0.90, 0.86, 0.82, 0.78, 0.74, 0.70, 0.66, 0.60, 0.54, 0.48];
-  let smallest = null;
-  let smallestWidth = 0;
-  let smallestHeight = 0;
-
-  try {
-    for (const maxDimension of dimensions) {
-      const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
-      const width = Math.max(1, Math.round(sourceWidth * scale));
-      const height = Math.max(1, Math.round(sourceHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext('2d', { alpha: false });
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, width, height);
-      context.drawImage(source, 0, 0, width, height);
-
-      for (const quality of qualities) {
-        const blob = await canvasToBlob(canvas, quality);
-        if (!smallest || blob.size < smallest.size) {
-          smallest = blob;
-          smallestWidth = width;
-          smallestHeight = height;
-        }
-        if (blob.size <= TARGET_PHOTO_BYTES) {
-          return {
-            id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-            dataUrl: await blobToDataUrl(blob),
-            size: blob.size,
-            originalName: file.name,
-            width,
-            height
-          };
-        }
-      }
-    }
-
-    // Final automatic fallback for unusually detailed/noisy photos.
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-    const context = canvas.getContext('2d', { alpha: false });
-    context.fillStyle = '#fff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const fallback = await canvasToBlob(canvas, 0.46);
-    if (!smallest || fallback.size < smallest.size) {
-      smallest = fallback;
-      smallestWidth = canvas.width;
-      smallestHeight = canvas.height;
-    }
-  } finally {
-    source.close?.();
-  }
-
-  if (smallest && smallest.size <= TARGET_PHOTO_BYTES) {
-    return {
-      id: `photo_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      dataUrl: await blobToDataUrl(smallest),
-      size: smallest.size,
-      originalName: file.name,
-      width: smallestWidth,
-      height: smallestHeight
-    };
-  }
-  throw new Error(`${file.name} 处理失败，请重新选择后再试`);
+  return compressImageForUpload(file, { idPrefix: 'photo' });
 }
 
 function renderPhotoPreview() {
@@ -676,7 +566,7 @@ function renderPhotoPreview() {
       <button type="button" class="photo-remove" data-photo-remove="${photo.id}" aria-label="删除第 ${index + 1} 张图片">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
-      <figcaption>${Math.ceil(photo.size / 1024)}KB · WebP</figcaption>
+      <figcaption>${photo.width}×${photo.height} · ${Math.ceil(photo.size / 1024)}KB · 上传后 WebP</figcaption>
     </figure>
   `).join('');
 }
@@ -685,7 +575,7 @@ async function handlePhotos(event) {
   const input = event.target;
   const processing = $('#photoProcessing');
   const available = MAX_PHOTOS - state.photoData.length;
-  const selected = [...input.files];
+  const selected = Array.from(input.files || []);
   input.value = '';
   if (!selected.length) return;
   if (available <= 0) return showToast('最多上传 8 张图片');
@@ -697,7 +587,7 @@ async function handlePhotos(event) {
   let added = 0;
   const errors = [];
   for (let index = 0; index < files.length; index += 1) {
-    processing.textContent = `正在转成 WebP 并压缩：${index + 1} / ${files.length}`;
+    processing.textContent = `正在上传并压缩：${index + 1} / ${files.length}`;
     try {
       const photo = await compressPhoto(files[index]);
       state.photoData.push(photo);
@@ -708,7 +598,7 @@ async function handlePhotos(event) {
     }
   }
 
-  processing.textContent = added ? `已添加 ${added} 张，均已转成 WebP 并压缩完成。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，服务器将统一保存为约 100KB WebP。` : '';
   if (errors.length) showToast(errors[0]);
 }
 
@@ -788,13 +678,13 @@ function renderReviewPhotoPreview() {
     <figure class="photo-item">
       <img src="${photo.dataUrl}" alt="点评照片 ${index + 1}" />
       <button type="button" class="photo-remove" data-review-photo-remove="${photo.id}" aria-label="删除第 ${index + 1} 张点评照片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-      <figcaption>${Math.ceil(photo.size / 1024)}KB · WebP</figcaption>
+      <figcaption>${photo.width}×${photo.height} · ${Math.ceil(photo.size / 1024)}KB · 上传后 WebP</figcaption>
     </figure>`).join('');
 }
 
 async function handleReviewPhotos(event) {
   const input = event.target;
-  const files = [...input.files];
+  const files = Array.from(input.files || []);
   input.value = '';
   if (!files.length) return;
   const available = MAX_REVIEW_PHOTOS - state.reviewPhotos.length;
@@ -804,7 +694,7 @@ async function handleReviewPhotos(event) {
   const errors = [];
   let added = 0;
   for (let index = 0; index < selected.length; index += 1) {
-    processing.textContent = `正在处理点评照片：${index + 1} / ${selected.length}`;
+    processing.textContent = `正在上传并压缩点评照片：${index + 1} / ${selected.length}`;
     try {
       state.reviewPhotos.push(await compressPhoto(selected[index]));
       added += 1;
@@ -813,7 +703,7 @@ async function handleReviewPhotos(event) {
       errors.push(error.message);
     }
   }
-  processing.textContent = added ? `已添加 ${added} 张高清 WebP 图片。` : '';
+  processing.textContent = added ? `已添加 ${added} 张，服务器将统一保存为约 100KB WebP。` : '';
   if (errors.length) showToast(errors[0]);
 }
 
