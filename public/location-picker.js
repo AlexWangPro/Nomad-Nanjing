@@ -185,10 +185,21 @@ export async function mountLocationPicker({
     <div class="location-nearby-list" data-location-nearby-list></div>`;
   mapShell.insertAdjacentElement('afterend', nearbyPanel);
 
+  const nearestPanel = document.createElement('section');
+  nearestPanel.className = 'location-nearest-panel';
+  nearestPanel.dataset.locationGenerated = 'true';
+  nearestPanel.hidden = true;
+  nearestPanel.innerHTML = `
+    <div class="location-nearest-heading"><div><strong>离你最近的匹配</strong><span>基于当前位置和输入店名，优先推荐最近门店。</span></div><span data-location-nearest-label></span></div>
+    <div class="location-nearest-list" data-location-nearest-list></div>`;
+  resultsNode.parentNode.insertBefore(nearestPanel, resultsNode);
+
   const locateButton = mapTools.querySelector('[data-location-locate]');
   const nearbyButton = mapTools.querySelector('[data-location-nearby]');
   const nearbyList = nearbyPanel.querySelector('[data-location-nearby-list]');
   const nearbyCloseButton = nearbyPanel.querySelector('[data-location-nearby-close]');
+  const nearestList = nearestPanel.querySelector('[data-location-nearest-list]');
+  const nearestLabel = nearestPanel.querySelector('[data-location-nearest-label]');
 
   const AMap = await ensureAmap(amapKey);
 
@@ -251,6 +262,10 @@ export async function mountLocationPicker({
   let inputTimer = null;
   let requestSerial = 0;
   let searchController = null;
+  let suggestionSerial = 0;
+  let suggestionController = null;
+  let suggestionTimer = null;
+  let userLocationPoint = null;
 
   function updateSummary() {
     summaryNode.innerHTML = summaryHtml(current);
@@ -308,6 +323,78 @@ export async function mountLocationPicker({
     map.setZoomAndCenter(16, point);
     emit();
     if (meta.autoAddress !== false && (!current.address || !current.district)) await reverseGeocode(point, true);
+  }
+
+  function recommendationKeyword() {
+    return text(searchInput.value || customNameInput?.value || '').trim();
+  }
+
+  function renderNearestResults(places) {
+    const usable = (places || []).filter((place) => Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat))).slice(0, 6);
+    nearestPanel.hidden = false;
+    nearestLabel.textContent = usable.length ? `${usable.length} 个` : '';
+    if (!usable.length) {
+      nearestList.innerHTML = '<div class="location-nearest-empty">当前位置附近没有找到匹配门店。下方仍可查看全南京搜索结果。</div>';
+      return;
+    }
+    nearestList.innerHTML = usable.map((place, index) => `
+      <button type="button" class="location-nearest-item" data-location-nearest-item="${index}">
+        <span class="location-nearest-rank">${index + 1}</span>
+        <span class="location-nearest-copy"><strong>${escapeHtml(place.name || '未命名地点')}</strong><small>${escapeHtml([place.district, place.address].filter(Boolean).join(' · ') || '南京市')}</small></span>
+        <em>${escapeHtml(formatDistance(place.distance))}</em>
+      </button>`).join('');
+    nearestList.querySelectorAll('[data-location-nearest-item]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const place = usable[Number(button.dataset.locationNearestItem)];
+        if (!place) return;
+        searchInput.value = place.name || searchInput.value;
+        statusNode.textContent = `已选择离你约 ${formatDistance(place.distance)} 的“${place.name || '门店'}”，正在确认地址…`;
+        await chooseLocation([Number(place.lng), Number(place.lat)], {
+          name: place.name,
+          address: place.address,
+          district: place.district,
+          poiId: place.id
+        });
+        statusNode.textContent = `已选择最近匹配门店：${place.name || '未命名地点'} · ${formatDistance(place.distance)}`;
+        resultsNode.hidden = true;
+      });
+    });
+  }
+
+  async function loadNearestRecommendations(keyword = recommendationKeyword(), point = userLocationPoint) {
+    const query = text(keyword).trim();
+    const target = getLngLat(point);
+    if (!target || query.length < 2) {
+      nearestPanel.hidden = true;
+      return;
+    }
+    const serial = ++suggestionSerial;
+    suggestionController?.abort();
+    suggestionController = new AbortController();
+    nearestPanel.hidden = false;
+    nearestLabel.textContent = '定位推荐';
+    nearestList.innerHTML = '<div class="location-nearest-loading"><span></span>正在按距离匹配最近门店…</div>';
+    try {
+      const payload = await apiJson(`/api/amap/suggest?q=${encodeURIComponent(query)}&lng=${encodeURIComponent(target[0])}&lat=${encodeURIComponent(target[1])}&city=${encodeURIComponent(city)}&limit=6`, {
+        signal: suggestionController.signal
+      });
+      if (destroyed || serial !== suggestionSerial) return;
+      renderNearestResults(payload.places || []);
+    } catch (error) {
+      if (error.name === 'AbortError' || destroyed || serial !== suggestionSerial) return;
+      nearestPanel.hidden = false;
+      nearestLabel.textContent = '';
+      nearestList.innerHTML = `<div class="location-nearest-empty">最近门店推荐失败：${escapeHtml(error.message)}。仍可使用普通搜索。</div>`;
+    }
+  }
+
+  function scheduleNearestRecommendation(keyword = recommendationKeyword()) {
+    window.clearTimeout(suggestionTimer);
+    if (!userLocationPoint || text(keyword).trim().length < 2) {
+      nearestPanel.hidden = true;
+      return;
+    }
+    suggestionTimer = window.setTimeout(() => loadNearestRecommendations(keyword, userLocationPoint), 260);
   }
 
   function renderNearbyResults(places) {
@@ -403,9 +490,15 @@ export async function mountLocationPicker({
     try {
       const { point, accuracy } = await getPreciseLocation();
       if (destroyed) return;
+      userLocationPoint = point;
       showUserLocation(point, accuracy);
       map.setZoomAndCenter(17, point);
-      await loadNearby(point, '你当前位置');
+      const keyword = recommendationKeyword();
+      await Promise.all([
+        loadNearby(point, '你当前位置'),
+        keyword.length >= 2 ? loadNearestRecommendations(keyword, point) : Promise.resolve()
+      ]);
+      if (keyword.length < 2) statusNode.textContent = '定位成功。现在输入店名，系统会优先推荐离你最近的匹配门店。';
     } catch (error) {
       statusNode.textContent = `定位失败：${error.message}。请确认使用 HTTPS 并允许位置权限。`;
     } finally {
@@ -467,6 +560,7 @@ export async function mountLocationPicker({
       });
       if (destroyed || serial !== requestSerial) return;
       renderResults(payload.places || []);
+      if (userLocationPoint) loadNearestRecommendations(keyword, userLocationPoint);
       statusNode.textContent = payload.places?.length
         ? `找到 ${payload.places.length} 个候选地点，请选择具体门店。`
         : '没有找到匹配地点，可以换一个关键词或直接点击地图。';
@@ -496,6 +590,7 @@ export async function mountLocationPicker({
       statusNode.textContent = '输入至少两个字即可搜索店名，不需要完整地址。';
       return;
     }
+    scheduleNearestRecommendation(keyword);
     inputTimer = window.setTimeout(() => search(keyword, { quiet: true }), 380);
   });
   searchInput.addEventListener('keydown', (event) => {
@@ -507,6 +602,7 @@ export async function mountLocationPicker({
 
   customNameInput?.addEventListener('input', () => {
     current.name = customNameInput.value.trim();
+    if (!searchInput.value.trim()) scheduleNearestRecommendation(current.name);
     updateSummary();
     onChange?.({ ...current });
   });
@@ -551,6 +647,9 @@ export async function mountLocationPicker({
       resultsNode.hidden = true;
       nearbyPanel.hidden = true;
       nearbyList.innerHTML = '';
+      nearestPanel.hidden = true;
+      nearestList.innerHTML = '';
+      userLocationPoint = null;
       userLocationMarker.hide();
       accuracyCircle.hide();
       statusNode.textContent = '输入店名搜索、定位到附近，或直接点击地图。';
@@ -559,7 +658,9 @@ export async function mountLocationPicker({
     destroy() {
       destroyed = true;
       window.clearTimeout(inputTimer);
+      window.clearTimeout(suggestionTimer);
       searchController?.abort();
+      suggestionController?.abort();
       try { map.destroy(); } catch {}
       root.__locationPicker = null;
     }

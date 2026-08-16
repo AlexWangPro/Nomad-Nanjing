@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_VERSION = '3.8.0';
+const APP_VERSION = '3.9.0';
 const PORT = Number(process.env.PORT || 3000);
 const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
 const DATA_DIR = path.resolve(RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -608,6 +608,15 @@ function readDb() {
   } catch (error) {
     throw new Error(`SQLite application state is invalid: ${error.message}. The database was not overwritten.`);
   }
+}
+
+function appStateMeta() {
+  ensureDb();
+  const row = sqlite.prepare('SELECT revision, updated_at FROM app_state WHERE id = 1').get();
+  return {
+    revision: Number(row?.revision || 0),
+    updatedAt: cleanString(row?.updated_at, 60)
+  };
 }
 
 function writeDb(db) {
@@ -1284,6 +1293,7 @@ function publicPlace(place, db = null) {
     source: place.source || '',
     sourceQuery: place.sourceQuery || '',
     verificationStatus: place.verificationStatus || (place.verified ? 'verified' : 'pending'),
+    updatedAt: place.updatedAt || '',
     ratingAverage,
     ratingCount,
     reviews: approvedReviews.slice(0, 8).map((review) => ({
@@ -1417,16 +1427,47 @@ async function searchAmapPlaces(query, { city = '南京', limit = 10 } = {}) {
   return (Array.isArray(payload.pois) ? payload.pois : []).map(normalizeAmapPoi).filter(Boolean);
 }
 
-async function searchAmapNearby(lng, lat, { radius = 1200, limit = 12 } = {}) {
+async function searchAmapNearby(lng, lat, { radius = 1200, limit = 12, keywords = '' } = {}) {
   const payload = await amapRestRequest('/v3/place/around', {
     location: `${Number(lng).toFixed(6)},${Number(lat).toFixed(6)}`,
-    radius: Math.max(100, Math.min(3000, Number(radius) || 1200)),
+    radius: Math.max(100, Math.min(50000, Number(radius) || 1200)),
+    keywords: cleanString(keywords, 80),
     sortrule: 'distance',
     offset: Math.max(1, Math.min(20, Number(limit) || 12)),
     page: 1,
     extensions: 'all'
   });
   return (Array.isArray(payload.pois) ? payload.pois : []).map(normalizeAmapPoi).filter(Boolean);
+}
+
+async function searchNearestAmapMatches(query, lng, lat, { city = '南京', limit = 6 } = {}) {
+  const maxResults = Math.max(1, Math.min(10, Number(limit) || 6));
+  const merged = new Map();
+
+  try {
+    const nearby = await searchAmapNearby(lng, lat, { radius: 30000, limit: 20, keywords: query });
+    for (const place of nearby) {
+      const key = place.id || `${place.name}|${place.lng}|${place.lat}`;
+      merged.set(key, { ...place, distance: Number.isFinite(Number(place.distance)) ? Number(place.distance) : distanceMeters(lng, lat, place.lng, place.lat) });
+    }
+  } catch (error) {
+    console.warn('Nearest AMap keyword search fallback:', error.message);
+  }
+
+  if (merged.size < maxResults) {
+    const textMatches = await searchAmapPlaces(query, { city, limit: 20 });
+    for (const place of textMatches) {
+      const key = place.id || `${place.name}|${place.lng}|${place.lat}`;
+      if (!merged.has(key)) {
+        merged.set(key, { ...place, distance: distanceMeters(lng, lat, place.lng, place.lat) });
+      }
+    }
+  }
+
+  return [...merged.values()]
+    .filter((place) => Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat)))
+    .sort((a, b) => Number(a.distance ?? Infinity) - Number(b.distance ?? Infinity))
+    .slice(0, maxResults);
 }
 
 async function reverseAmapLocation(lng, lat) {
@@ -1652,12 +1693,29 @@ async function handleApi(req, res, url) {
     if (rateLimited(req, 'amap-around', 80, 60 * 1000)) return json(res, 429, { error: '周边地点搜索过于频繁，请稍后再试。' });
     const lng = numberInRange(url.searchParams.get('lng'), 118.3, 119.4);
     const lat = numberInRange(url.searchParams.get('lat'), 31.5, 32.6);
-    const radius = numberInRange(url.searchParams.get('radius') || 1200, 100, 3000, 1200);
+    const radius = numberInRange(url.searchParams.get('radius') || 1200, 100, 50000, 1200);
     const limit = numberInRange(url.searchParams.get('limit') || 12, 1, 20, 12);
     if (lng === null || lat === null) return json(res, 400, { error: '无效的南京位置。' });
     try {
       const places = await searchAmapNearby(lng, lat, { radius, limit });
       return json(res, 200, { ok: true, center: { lng, lat }, places });
+    } catch (error) {
+      return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
+    }
+  }
+
+  if (url.pathname === '/api/amap/suggest' && req.method === 'GET') {
+    if (rateLimited(req, 'amap-suggest', 80, 60 * 1000)) return json(res, 429, { error: '附近门店推荐过于频繁，请稍后再试。' });
+    const query = cleanString(url.searchParams.get('q'), 80);
+    const city = cleanString(url.searchParams.get('city') || '南京', 30) || '南京';
+    const lng = numberInRange(url.searchParams.get('lng'), 118.3, 119.4);
+    const lat = numberInRange(url.searchParams.get('lat'), 31.5, 32.6);
+    const limit = numberInRange(url.searchParams.get('limit') || 6, 1, 10, 6);
+    if (query.length < 2) return json(res, 400, { error: '请输入至少两个字的店名。' });
+    if (lng === null || lat === null) return json(res, 400, { error: '请先允许定位，以便推荐离你最近的门店。' });
+    try {
+      const places = await searchNearestAmapMatches(query, lng, lat, { city, limit });
+      return json(res, 200, { ok: true, query, center: { lng, lat }, places });
     } catch (error) {
       return json(res, error.statusCode || 502, { error: error.message, infocode: error.infocode || '' });
     }
@@ -1748,13 +1806,19 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (url.pathname === '/api/places/revision' && req.method === 'GET') {
+    const meta = appStateMeta();
+    return json(res, 200, meta);
+  }
+
   if (url.pathname === '/api/places' && req.method === 'GET') {
     const db = readDb();
+    const meta = appStateMeta();
     const places = db.places
       .filter((place) => !place.archived)
       .sort((a, b) => Number(b.featured) - Number(a.featured) || String(b.updatedAt).localeCompare(String(a.updatedAt)))
       .map((place) => publicPlace(place, db));
-    return json(res, 200, { places });
+    return json(res, 200, { places, revision: meta.revision, updatedAt: meta.updatedAt });
   }
 
   if (url.pathname === '/api/submissions' && req.method === 'POST') {

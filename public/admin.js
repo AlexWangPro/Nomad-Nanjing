@@ -1,5 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=3.8.0';
-import { compressImageForUpload } from './image-compression.js?v=3.8.0';
+import { mountLocationPicker } from './location-picker.js?v=3.9.0';
+import { compressImageForUpload } from './image-compression.js?v=3.9.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -510,6 +510,12 @@ async function savePlace(event, id) {
   const form = event.currentTarget;
   const fd = new FormData(form);
   const payload = Object.fromEntries(fd.entries());
+  payload.name = String(form.elements.name?.value || '').trim();
+  payload.address = String(form.elements.address?.value || '').trim();
+  payload.lng = String(form.elements.lng?.value || '').trim();
+  payload.lat = String(form.elements.lat?.value || '').trim();
+  payload.district = String(form.elements.district?.value || '').trim();
+  payload.amapPoiId = String(form.elements.amapPoiId?.value || '').trim();
   if (!payload.lng || !payload.lat || !payload.address) {
     feedback($('#placeFeedback'), '请先通过搜索或地图确认精确位置。', 'error');
     return;
@@ -527,7 +533,8 @@ async function savePlace(event, id) {
   try {
     const endpoint = id ? `/api/portal/places/${encodeURIComponent(id)}` : '/api/admin/places';
     const result = await api(endpoint, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
-    feedback(node, result.mode === 'review' ? '修改已提交，等待管理员审核。' : '保存成功。', 'success');
+    feedback(node, result.mode === 'review' ? '修改已提交，等待管理员审核。' : '保存成功，公开页面会自动同步。', 'success');
+    if (result.mode !== 'review') localStorage.setItem('nomad-public-data-updated', String(Date.now()));
     await refreshData();
     setTimeout(closeDrawer, 500);
   } catch (error) {

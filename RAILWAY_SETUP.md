@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.8 Railway 部署说明
+# Nomad Nanjing v3.9 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.8 之前：
+在部署 v3.9 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -23,7 +23,7 @@ RAILWAY_VOLUME_MOUNT_PATH=/data
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.8 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v3.9 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.8.0",
+  "version": "3.9.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -137,6 +137,11 @@ storage.persistentVolume = true
 
 部署后检查 `/manifest.webmanifest`、`/logo.svg` 和 `/icons/icon-512.png`。无需新增 Railway 环境变量。
 
-## v3.8 说明
+## v3.9 说明
+
+- 管理员修改已发布地点后，公开前端会通过数据 revision 自动同步地址、店名与坐标。
+- 用户允许定位后，输入店名会显示“离你最近的匹配”，可一键采用最近门店的名称、地址和地图坐标。
+- 普通全南京高德搜索仍保留作为兜底。
+
 
 本次升级不需要新增环境变量。新增的图片压缩接口与网站同域运行，不需要额外服务。地点与点评数据继续保存在现有 Railway Volume 的 SQLite 数据库中。

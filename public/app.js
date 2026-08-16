@@ -1,5 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=3.8.0';
-import { compressImageForUpload } from './image-compression.js?v=3.8.0';
+import { mountLocationPicker } from './location-picker.js?v=3.9.0';
+import { compressImageForUpload } from './image-compression.js?v=3.9.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -18,6 +18,8 @@ const state = {
   userPosition: null,
   photoData: [],
   reviewPhotos: [],
+  placesRevision: 0,
+  placesSyncInFlight: false,
   amapDiagnostics: [],
   submissionLocationPicker: null,
   submissionStep: 1,
@@ -428,6 +430,46 @@ function moveImageViewer(step) {
   renderImageViewer(step);
 }
 
+function applyPlacesPayload(payload, { notify = false } = {}) {
+  state.places = payload.places || [];
+  if (Number.isFinite(Number(payload.revision))) state.placesRevision = Number(payload.revision);
+  applyFilters();
+  renderFavorites();
+  if (state.selected) {
+    const updated = state.places.find((place) => place.id === state.selected.id);
+    if (updated) {
+      state.selected = updated;
+      renderDetail(updated);
+      highlightMarker(updated.id);
+    } else {
+      closeDetail();
+    }
+  }
+  if (notify) showToast(`地点资料已同步，共 ${state.places.length} 个地点`);
+}
+
+async function fetchLatestPlaces({ notify = false } = {}) {
+  const payload = await api(`/api/places?refresh=${Date.now()}`);
+  applyPlacesPayload(payload, { notify });
+  return payload;
+}
+
+async function checkForPlaceUpdates({ force = false } = {}) {
+  if (state.placesSyncInFlight || (!force && document.hidden)) return;
+  state.placesSyncInFlight = true;
+  try {
+    const meta = await api(`/api/places/revision?ts=${Date.now()}`);
+    const nextRevision = Number(meta.revision || 0);
+    if (force || !state.placesRevision || nextRevision !== state.placesRevision) {
+      await fetchLatestPlaces({ notify: Boolean(state.placesRevision && nextRevision !== state.placesRevision) });
+    }
+  } catch (error) {
+    console.warn('Public place sync failed:', error.message);
+  } finally {
+    state.placesSyncInFlight = false;
+  }
+}
+
 async function refreshPlaces() {
   const button = $('#refreshPlaces');
   if (button.disabled) return;
@@ -435,20 +477,7 @@ async function refreshPlaces() {
   button.classList.add('is-loading');
   setStatus('正在刷新地点…', true);
   try {
-    const payload = await api(`/api/places?refresh=${Date.now()}`);
-    state.places = payload.places || [];
-    applyFilters();
-    renderFavorites();
-    if (state.selected) {
-      const updated = state.places.find((place) => place.id === state.selected.id);
-      if (updated) {
-        state.selected = updated;
-        renderDetail(updated);
-        highlightMarker(updated.id);
-      } else {
-        closeDetail();
-      }
-    }
+    await fetchLatestPlaces();
     showToast(`已刷新，共 ${state.places.length} 个地点`);
   } catch (error) {
     setStatus('刷新失败，请稍后重试', false);
@@ -1044,11 +1073,10 @@ async function init() {
   try {
     const [config, placesPayload] = await Promise.all([api('/api/config'), api('/api/places')]);
     state.config = config;
-    state.places = placesPayload.places || [];
+    applyPlacesPayload(placesPayload);
     $('#appName').textContent = config.appName;
     $('#appNameEn').textContent = config.appNameEn;
     document.title = config.appName;
-    applyFilters();
     await initMap();
     if (new URLSearchParams(window.location.search).get('action') === 'submit') {
       setSubmissionStep(1);
@@ -1075,5 +1103,14 @@ window.addEventListener('unhandledrejection', (event) => {
   const message = event.reason?.message || String(event.reason || '');
   if (/amap|autonavi|高德/i.test(message)) recordAmapDiagnostic(message);
 });
+
+window.addEventListener('focus', () => checkForPlaceUpdates());
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkForPlaceUpdates();
+});
+window.addEventListener('storage', (event) => {
+  if (event.key === 'nomad-public-data-updated') checkForPlaceUpdates({ force: true });
+});
+window.setInterval(() => checkForPlaceUpdates(), 15000);
 
 init();
