@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=3.9.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.0.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -68,6 +68,13 @@
         </div>
         <span class="count-badge" id="placeCount">0</span>
       </div>
+      <button class="today-work-button" id="todayWorkButton" type="button">
+        <span class="today-work-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 7.5h16v10H4z"/><path d="M8 7.5V5.8A1.8 1.8 0 0 1 9.8 4h4.4A1.8 1.8 0 0 1 16 5.8v1.7M9 12h6"/></svg>
+        </span>
+        <span><strong>我今天去哪办公？</strong><small>按场景和距离给你 3 个选择</small></span>
+        <svg class="today-work-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+      </button>
       <p class="rail-intro">地点与用户点评均经过审核后公开，评分只反映已审核的真实体验。</p>
       <div id="placeList" class="place-list"></div>
     </aside>
@@ -253,15 +260,52 @@
   </dialog>
 
   <dialog class="modal" id="favoriteModal">
-    <div class="modal-card compact-card">
+    <div class="modal-card saved-lists-card">
       <div class="modal-header">
         <div>
-          <span class="eyebrow">SAVED PLACES</span>
-          <h2>我的收藏</h2>
+          <span class="eyebrow">MY WORK MAP</span>
+          <h2>我的办公清单</h2>
+          <p class="modal-subcopy">收藏和自定义清单只保存在这台设备，不需要登录。</p>
         </div>
         <button class="icon-button modal-close" type="button" data-close-modal="favoriteModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
+      <div class="saved-list-tabs" id="savedListTabs"></div>
       <div id="favoriteList" class="favorite-list"></div>
+      <form class="new-list-form" id="newListForm">
+        <input id="newListName" maxlength="32" placeholder="新建清单，例如：河西 Zoom 地点" />
+        <button class="secondary-button" type="submit">新建清单</button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="modal" id="listPickerModal">
+    <div class="modal-card compact-card list-picker-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">ADD TO LIST</span><h2>加入办公清单</h2><p class="modal-subcopy" id="listPickerPlaceName"></p></div>
+        <button class="icon-button modal-close" type="button" data-close-modal="listPickerModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="list-picker-options" id="listPickerOptions"></div>
+    </div>
+  </dialog>
+
+  <dialog class="modal" id="recommendModal">
+    <div class="modal-card recommend-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">WORKSPACE MATCH</span><h2>我今天去哪办公？</h2><p class="modal-subcopy">选一个场景，我按地点信息、评分和距离给你最合适的 3 个选择。</p></div>
+        <button class="icon-button modal-close" type="button" data-close-modal="recommendModal" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="recommend-location-row">
+        <div><strong id="recommendLocationLabel">还没有使用当前位置</strong><small>不开定位也可以推荐；开启后会优先考虑距离。</small></div>
+        <button class="secondary-button" id="recommendLocateButton" type="button">使用当前位置</button>
+      </div>
+      <div class="recommend-scenes" id="recommendScenes">
+        <button type="button" data-recommend-scene="balanced" class="active"><strong>今天随便找个好地方</strong><span>综合安静、Wi-Fi、插座和评分</span></button>
+        <button type="button" data-recommend-scene="deep"><strong>深度工作</strong><span>安静、稳定、尽量少打扰</span></button>
+        <button type="button" data-recommend-scene="zoom"><strong>Zoom / 打电话</strong><span>优先允许通话且网络稳定</span></button>
+        <button type="button" data-recommend-scene="long"><strong>坐 3 小时以上</strong><span>插座、Wi-Fi 和长时间停留更重要</span></button>
+        <button type="button" data-recommend-scene="free"><strong>尽量免费</strong><span>图书馆、公共空间和免费地点优先</span></button>
+      </div>
+      <div class="recommend-results" id="recommendResults"></div>
     </div>
   </dialog>
 
@@ -309,6 +353,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=3.9.0"></script>
+  <script type="module" src="/app.js?v=4.0.0"></script>
 </body>
 </html>

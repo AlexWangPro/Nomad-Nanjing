@@ -1,8 +1,8 @@
-# Nomad Nanjing v3.9 Railway 部署说明
+# Nomad Nanjing v4.0 Railway 部署说明
 
 ## 1. 先连接 Railway Volume
 
-在部署 v3.9 之前：
+在部署 v4.0 之前：
 
 1. 打开 Railway 项目画布。
 2. 创建或选择一个 Volume。
@@ -23,11 +23,11 @@ RAILWAY_VOLUME_MOUNT_PATH=/data
 
 ## 2. 更新 GitHub 代码
 
-解压 v3.9 ZIP，用里面的文件覆盖仓库根目录，然后提交：
+解压 v4.0 ZIP，用里面的文件覆盖仓库根目录，然后提交：
 
 ```bash
 git add .
-git commit -m "Fix mobile uploads and target 100KB WebP"
+git commit -m "Add workspace recommendations lists and share cards"
 git push
 ```
 
@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "3.9.0",
+  "version": "4.0.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,
@@ -137,11 +137,12 @@ storage.persistentVolume = true
 
 部署后检查 `/manifest.webmanifest`、`/logo.svg` 和 `/icons/icon-512.png`。无需新增 Railway 环境变量。
 
-## v3.9 说明
+## v4.0 说明
 
-- 管理员修改已发布地点后，公开前端会通过数据 revision 自动同步地址、店名与坐标。
-- 用户允许定位后，输入店名会显示“离你最近的匹配”，可一键采用最近门店的名称、地址和地图坐标。
-- 普通全南京高德搜索仍保留作为兜底。
+- 新增“我今天去哪办公？”场景推荐，不需要新增服务器环境变量。
+- “我的办公清单”使用浏览器 `localStorage` 保存，因此不同设备之间暂不自动同步；清空浏览器数据会同时清空本机清单。
+- 分享卡片在浏览器本地生成 PNG，不增加服务器图片存储压力。
+- 地点分享链接支持 `?place=<地点ID>`，不会改变 SQLite 数据结构。
+- v3.9 的公开数据 revision 自动同步和基于定位的最近门店推荐继续保留。
 
-
-本次升级不需要新增环境变量。新增的图片压缩接口与网站同域运行，不需要额外服务。地点与点评数据继续保存在现有 Railway Volume 的 SQLite 数据库中。
+本次升级不需要新增环境变量，也不会修改现有 SQLite 数据库结构。地点、点评和图片继续保存在现有 Railway Volume。

@@ -1,8 +1,17 @@
-import { mountLocationPicker } from './location-picker.js?v=3.9.0';
-import { compressImageForUpload } from './image-compression.js?v=3.9.0';
+import { mountLocationPicker } from './location-picker.js?v=4.0.0';
+import { compressImageForUpload } from './image-compression.js?v=4.0.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+function safeLocalJson(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || 'null');
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const state = {
   config: null,
@@ -11,7 +20,11 @@ const state = {
   selected: null,
   activeFilter: 'all',
   search: '',
-  favorites: new Set(JSON.parse(localStorage.getItem('nwm-favorites') || '[]')),
+  favorites: new Set(safeLocalJson('nwm-favorites', [])),
+  officeLists: safeLocalJson('nwm-office-lists', [{ id: 'want', name: '想去', placeIds: [] }]),
+  activeSavedList: 'favorites',
+  listPickerPlaceId: null,
+  recommendScene: 'balanced',
   map: null,
   markers: new Map(),
   usingFallback: true,
@@ -28,14 +41,15 @@ const state = {
 
 const filters = [
   { id: 'all', label: '全部' },
+  { id: 'deep', label: '深度工作' },
+  { id: 'zoom', label: 'Zoom / 通话' },
+  { id: 'long', label: '坐 3h+' },
+  { id: 'free', label: '免费办公' },
+  { id: 'metro', label: '地铁附近' },
   { id: 'coffee', label: '咖啡馆' },
   { id: 'library', label: '图书馆' },
   { id: 'coworking', label: '共享办公' },
-  { id: 'quiet', label: '安静' },
-  { id: 'call', label: '可通话' },
-  { id: 'outlets', label: '插座多' },
-  { id: 'free', label: '免费' },
-  { id: 'metro', label: '近地铁' },
+  { id: 'hotel', label: '酒店大堂' },
   { id: 'verified', label: '已验证' }
 ];
 
@@ -75,6 +89,406 @@ function formatReviewDate(value) {
   }
 }
 
+
+function normalizeOfficeLists() {
+  const input = Array.isArray(state.officeLists) ? state.officeLists : [];
+  const seen = new Set();
+  state.officeLists = input.map((list) => ({
+    id: String(list?.id || '').trim(),
+    name: String(list?.name || '').trim().slice(0, 32),
+    placeIds: [...new Set(Array.isArray(list?.placeIds) ? list.placeIds.map(String) : [])]
+  })).filter((list) => list.id && list.name && !seen.has(list.id) && seen.add(list.id));
+  if (!state.officeLists.length) state.officeLists = [{ id: 'want', name: '想去', placeIds: [] }];
+  persistOfficeLists();
+}
+
+function persistOfficeLists() {
+  try { localStorage.setItem('nwm-office-lists', JSON.stringify(state.officeLists)); } catch {}
+}
+
+function createOfficeList(name) {
+  const cleanName = String(name || '').trim().slice(0, 32);
+  if (!cleanName) return null;
+  const existing = state.officeLists.find((list) => list.name === cleanName);
+  if (existing) return existing;
+  const id = `list-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const list = { id, name: cleanName, placeIds: [] };
+  state.officeLists.push(list);
+  persistOfficeLists();
+  return list;
+}
+
+function getSavedListDescriptor(id) {
+  if (id === 'favorites') return { id: 'favorites', name: '收藏', placeIds: [...state.favorites], builtIn: true };
+  const list = state.officeLists.find((item) => item.id === id);
+  return list ? { ...list, builtIn: false } : { id: 'favorites', name: '收藏', placeIds: [...state.favorites], builtIn: true };
+}
+
+function placeIsInList(placeId, listId) {
+  if (listId === 'favorites') return state.favorites.has(placeId);
+  return state.officeLists.find((list) => list.id === listId)?.placeIds.includes(placeId) || false;
+}
+
+function togglePlaceInList(placeId, listId) {
+  if (listId === 'favorites') {
+    toggleFavorite(placeId);
+    return;
+  }
+  const list = state.officeLists.find((item) => item.id === listId);
+  if (!list) return;
+  if (list.placeIds.includes(placeId)) list.placeIds = list.placeIds.filter((id) => id !== placeId);
+  else list.placeIds.push(placeId);
+  persistOfficeLists();
+  renderFavorites();
+  renderListPicker();
+  showToast(list.placeIds.includes(placeId) ? `已加入「${list.name}」` : `已从「${list.name}」移除`);
+}
+
+function deleteOfficeList(listId) {
+  const list = state.officeLists.find((item) => item.id === listId);
+  if (!list) return;
+  state.officeLists = state.officeLists.filter((item) => item.id !== listId);
+  persistOfficeLists();
+  state.activeSavedList = 'favorites';
+  renderFavorites();
+  showToast(`已删除清单「${list.name}」`);
+}
+
+function haversineKm(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return null;
+  const [lng1, lat1] = a.map(Number);
+  const [lng2, lat2] = b.map(Number);
+  if (![lng1, lat1, lng2, lat2].every(Number.isFinite)) return null;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function distanceText(km) {
+  if (!Number.isFinite(km)) return '';
+  if (km < 1) return `${Math.max(50, Math.round(km * 1000 / 50) * 50)}m`;
+  return `${km.toFixed(km < 10 ? 1 : 0)}km`;
+}
+
+function wifiScore(place) {
+  const text = String(place.wifi || '');
+  if (/高速|稳定|fast|stable/i.test(text)) return 1;
+  if (/需验证|待确认|需询问/.test(text)) return .3;
+  return .55;
+}
+
+function outletScore(place) {
+  const text = String(place.outlets || '');
+  if (/充足|每席位|较多/.test(text)) return 1;
+  if (/靠墙|部分|一般/.test(text)) return .65;
+  if (/少量|较少/.test(text)) return .25;
+  return .4;
+}
+
+function recommendationScore(place, scene = 'balanced') {
+  const quiet = Math.max(1, Math.min(5, Number(place.quietLevel) || 3));
+  const rating = Number(place.ratingAverage) || 0;
+  const ratingCount = Number(place.ratingCount) || 0;
+  const distance = state.userPosition ? haversineKm(state.userPosition, [place.lng, place.lat]) : null;
+  let score = 0;
+  score += quiet * 4;
+  score += wifiScore(place) * 12;
+  score += outletScore(place) * 10;
+  score += place.verified ? 8 : 0;
+  score += place.featured ? 4 : 0;
+  score += rating ? rating * 3 + Math.min(5, ratingCount) : 0;
+  if (Number.isFinite(distance)) score += Math.max(-12, 24 - distance * 4.5);
+
+  if (scene === 'deep') {
+    score += quiet * 10;
+    score += place.callFriendly ? -2 : 8;
+    score += wifiScore(place) * 8;
+  } else if (scene === 'zoom') {
+    score += place.callFriendly ? 35 : -28;
+    score += wifiScore(place) * 20;
+    score += quiet >= 3 ? 6 : -4;
+    if (place.category === 'coworking' || place.category === 'hotel') score += 8;
+  } else if (scene === 'long') {
+    score += place.unlimited ? 28 : -8;
+    score += outletScore(place) * 18;
+    score += wifiScore(place) * 14;
+    score += quiet * 4;
+  } else if (scene === 'free') {
+    score += place.free ? 45 : -30;
+    if (place.category === 'library' || place.category === 'public') score += 10;
+    score += quiet * 5;
+  } else {
+    score += place.callFriendly ? 4 : 0;
+    score += place.unlimited ? 6 : 0;
+  }
+  return { score, distance };
+}
+
+function recommendationReasons(place, scene) {
+  const reasons = [];
+  if (scene === 'deep' && Number(place.quietLevel) >= 4) reasons.push('安静');
+  if (scene === 'zoom' && place.callFriendly) reasons.push('适合通话');
+  if (scene === 'long' && place.unlimited) reasons.push('适合久坐');
+  if (scene === 'free' && place.free) reasons.push('免费');
+  if (wifiScore(place) >= .9) reasons.push('Wi-Fi 稳定');
+  if (outletScore(place) >= .65) reasons.push('有插座');
+  if (place.verified) reasons.push('已验证');
+  if (!reasons.length) reasons.push(categoryLabel[place.category] || '办公地点');
+  return reasons.slice(0, 3);
+}
+
+function renderRecommendations() {
+  const results = $('#recommendResults');
+  if (!results) return;
+  const candidates = state.places.filter((place) => Number.isFinite(Number(place.lng)) && Number.isFinite(Number(place.lat)));
+  if (!candidates.length) {
+    results.innerHTML = '<div class="recommend-empty">目前还没有足够的地点数据来推荐。</div>';
+    return;
+  }
+  const ranked = candidates.map((place) => ({ place, ...recommendationScore(place, state.recommendScene) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  results.innerHTML = `<div class="recommend-result-heading"><strong>今天优先考虑这 3 个</strong><span>${state.userPosition ? '已计入距离' : '未开启定位，按地点质量排序'}</span></div>${ranked.map(({ place, distance }, index) => `
+    <button class="recommend-result-card" type="button" data-recommend-place="${escapeHtml(place.id)}">
+      ${place.images?.[0] ? `<img src="${escapeHtml(place.images[0])}" alt="" loading="lazy" />` : `<span class="recommend-result-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>`}
+      <span class="recommend-result-copy"><small>推荐 ${index + 1}${Number.isFinite(distance) ? ` · ${distanceText(distance)}` : ''}</small><strong>${escapeHtml(place.name)}</strong><span>${recommendationReasons(place, state.recommendScene).map((item) => `<em>${escapeHtml(item)}</em>`).join('')}</span><b>${escapeHtml(place.address || place.district || '南京')}</b></span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+    </button>`).join('')}`;
+  $$('[data-recommend-place]', results).forEach((button) => button.addEventListener('click', () => {
+    $('#recommendModal').close();
+    selectPlace(button.dataset.recommendPlace, true);
+  }));
+}
+
+function openRecommendations() {
+  $$('#recommendScenes [data-recommend-scene]').forEach((button) => button.classList.toggle('active', button.dataset.recommendScene === state.recommendScene));
+  $('#recommendLocationLabel').textContent = state.userPosition ? '已使用当前位置参与推荐' : '还没有使用当前位置';
+  renderRecommendations();
+  openModal('recommendModal');
+}
+
+function locateForRecommendation() {
+  if (!navigator.geolocation) return showToast('当前浏览器不支持定位');
+  const button = $('#recommendLocateButton');
+  button.disabled = true;
+  button.textContent = '定位中…';
+  navigator.geolocation.getCurrentPosition((position) => {
+    state.userPosition = [position.coords.longitude, position.coords.latitude];
+    $('#recommendLocationLabel').textContent = '已使用当前位置参与推荐';
+    button.disabled = false;
+    button.textContent = '重新定位';
+    renderRecommendations();
+    if (!state.usingFallback && state.map) state.map.setZoomAndCenter(13.5, state.userPosition);
+  }, () => {
+    button.disabled = false;
+    button.textContent = '使用当前位置';
+    showToast('定位失败，请检查浏览器位置权限');
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
+function renderSavedListTabs() {
+  const tabs = $('#savedListTabs');
+  if (!tabs) return;
+  const descriptors = [{ id: 'favorites', name: '收藏', count: state.favorites.size, builtIn: true }, ...state.officeLists.map((list) => ({ ...list, count: list.placeIds.length, builtIn: false }))];
+  if (!descriptors.some((item) => item.id === state.activeSavedList)) state.activeSavedList = 'favorites';
+  tabs.innerHTML = descriptors.map((list) => `<button type="button" class="${state.activeSavedList === list.id ? 'active' : ''}" data-saved-list="${escapeHtml(list.id)}"><span>${escapeHtml(list.name)}</span><small>${list.count}</small></button>`).join('');
+  $$('[data-saved-list]', tabs).forEach((button) => button.addEventListener('click', () => {
+    state.activeSavedList = button.dataset.savedList;
+    renderFavorites();
+  }));
+}
+
+function renderListPicker() {
+  const root = $('#listPickerOptions');
+  if (!root) return;
+  const placeId = state.listPickerPlaceId;
+  if (!placeId) { root.innerHTML = ''; return; }
+  root.innerHTML = state.officeLists.map((list) => {
+    const active = list.placeIds.includes(placeId);
+    return `<button type="button" class="${active ? 'active' : ''}" data-picker-list="${escapeHtml(list.id)}"><span><strong>${escapeHtml(list.name)}</strong><small>${list.placeIds.length} 个地点</small></span><i>${active ? '✓' : '+'}</i></button>`;
+  }).join('') || '<div class="favorite-empty">还没有自定义清单。请先在“我的办公清单”中新建一个。</div>';
+  $$('[data-picker-list]', root).forEach((button) => button.addEventListener('click', () => togglePlaceInList(placeId, button.dataset.pickerList)));
+}
+
+function openListPicker(place) {
+  state.listPickerPlaceId = place.id;
+  $('#listPickerPlaceName').textContent = place.name;
+  renderListPicker();
+  openModal('listPickerModal');
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.roundRect?.(x, y, w, h, radius);
+  if (!ctx.roundRect) {
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+  }
+  ctx.closePath();
+}
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) {
+  const chars = [...String(text || '')];
+  let line = '';
+  let lineNo = 0;
+  for (let i = 0; i < chars.length; i += 1) {
+    const test = line + chars[i];
+    if (ctx.measureText(test).width > maxWidth && line) {
+      ctx.fillText(line, x, y + lineNo * lineHeight);
+      line = chars[i];
+      lineNo += 1;
+      if (lineNo >= maxLines) return y + lineNo * lineHeight;
+    } else line = test;
+  }
+  if (line && lineNo < maxLines) {
+    ctx.fillText(line, x, y + lineNo * lineHeight);
+    lineNo += 1;
+  }
+  return y + lineNo * lineHeight;
+}
+
+function loadCanvasImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function drawCover(ctx, image, x, y, w, h) {
+  const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+  const dw = image.naturalWidth * scale;
+  const dh = image.naturalHeight * scale;
+  ctx.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+async function makeShareCardBlob(place) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#edf4ef';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  roundedRectPath(ctx, 48, 48, 984, 1254, 52);
+  ctx.clip();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(48, 48, 984, 1254);
+
+  const coverY = 48;
+  const coverH = 560;
+  let imageLoaded = false;
+  if (place.images?.[0]) {
+    try {
+      const image = await loadCanvasImage(place.images[0]);
+      drawCover(ctx, image, 48, coverY, 984, coverH);
+      imageLoaded = true;
+    } catch {}
+  }
+  if (!imageLoaded) {
+    ctx.fillStyle = '#dce9e1';
+    ctx.fillRect(48, coverY, 984, coverH);
+    ctx.fillStyle = '#1f6b52';
+    ctx.font = '700 72px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(categoryLabel[place.category] || '南京办公地点', 540, 330);
+  }
+  const gradient = ctx.createLinearGradient(0, coverY + 300, 0, coverY + coverH);
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(0,0,0,.48)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(48, coverY, 984, coverH);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.font = '800 34px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  ctx.fillText('NOMAD NANJING', 92, 120);
+  ctx.font = '600 22px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  ctx.fillText('南京数字游民办公地图', 92, 158);
+
+  ctx.fillStyle = '#16231d';
+  ctx.font = '800 58px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  let y = wrapCanvasText(ctx, place.name, 92, 690, 880, 72, 2) + 20;
+  ctx.font = '500 28px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  ctx.fillStyle = '#617168';
+  y = wrapCanvasText(ctx, place.address || place.district || '南京', 92, y, 880, 42, 2) + 24;
+
+  if (place.ratingCount) {
+    ctx.fillStyle = '#a96f12';
+    ctx.font = '800 34px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+    ctx.fillText(`★ ${Number(place.ratingAverage).toFixed(1)}  ·  ${place.ratingCount} 条点评`, 92, y);
+    y += 58;
+  }
+
+  const tags = [...new Set([
+    Number(place.quietLevel) >= 4 ? '适合深度工作' : '',
+    place.callFriendly ? '可 Zoom / 通话' : '',
+    outletScore(place) >= .65 ? '有插座' : '',
+    wifiScore(place) >= .9 ? 'Wi-Fi 稳定' : '',
+    place.free ? '免费' : '',
+    place.unlimited ? '适合久坐' : ''
+  ].filter(Boolean))].slice(0, 4);
+  ctx.font = '700 24px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  let tagX = 92;
+  let tagY = y;
+  for (const tag of tags) {
+    const width = ctx.measureText(tag).width + 40;
+    if (tagX + width > 980) { tagX = 92; tagY += 58; }
+    ctx.fillStyle = '#e6f1eb';
+    roundedRectPath(ctx, tagX, tagY - 31, width, 44, 22);
+    ctx.fill();
+    ctx.fillStyle = '#1f6b52';
+    ctx.fillText(tag, tagX + 20, tagY);
+    tagX += width + 14;
+  }
+
+  ctx.fillStyle = '#edf4ef';
+  ctx.fillRect(48, 1160, 984, 142);
+  ctx.fillStyle = '#1f6b52';
+  ctx.font = '800 30px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  ctx.fillText('在南京，找到适合打开电脑的地方', 92, 1218);
+  ctx.fillStyle = '#617168';
+  ctx.font = '600 23px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+  ctx.fillText(window.location.host || 'nomadnanjing.com', 92, 1262);
+  ctx.restore();
+
+  return await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('生成分享卡片失败')), 'image/png', 0.96));
+}
+
+async function sharePlaceCard(place) {
+  showToast('正在生成分享卡片…');
+  try {
+    const blob = await makeShareCardBlob(place);
+    const safeName = String(place.name || 'nomad-nanjing').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 40);
+    const file = new File([blob], `${safeName}-Nomad-Nanjing.png`, { type: 'image/png' });
+    const shareUrl = `${window.location.origin}${window.location.pathname}?place=${encodeURIComponent(place.id)}`;
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: place.name, text: `${place.name} · Nomad Nanjing\n${shareUrl}`, files: [file] });
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    try { await navigator.clipboard?.writeText(shareUrl); } catch {}
+    showToast('分享卡片已保存，地点链接也已复制');
+  } catch (error) {
+    if (error?.name === 'AbortError') return;
+    showToast(error.message || '分享卡片生成失败');
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -103,10 +517,11 @@ function placeMatches(place) {
   switch (state.activeFilter) {
     case 'coffee':
     case 'library':
-    case 'coworking': return place.category === state.activeFilter;
-    case 'quiet': return Number(place.quietLevel) >= 4;
-    case 'call': return place.callFriendly === true;
-    case 'outlets': return /充足|每席位|较多|靠墙/.test(place.outlets || '');
+    case 'coworking':
+    case 'hotel': return place.category === state.activeFilter;
+    case 'deep': return Number(place.quietLevel) >= 4;
+    case 'zoom': return place.callFriendly === true;
+    case 'long': return place.unlimited === true || /充足|每席位|较多|靠墙/.test(place.outlets || '');
     case 'free': return place.free === true;
     case 'metro': return Number(place.metroMinutes) <= 8;
     case 'verified': return place.verified === true;
@@ -286,11 +701,13 @@ function renderDetail(place) {
             <img src="${escapeHtml(src)}" alt="${escapeHtml(place.name)}现场照片 ${index + 1}" loading="lazy" />
           </button>`).join('')}
       </div>` : ''}
-    <div class="detail-actions">
-      <a class="primary-button" style="display:flex;align-items:center;justify-content:center" href="${navigateUrl}" target="_blank" rel="noreferrer">高德导航</a>
+    <div class="detail-actions detail-actions-v4">
+      <a class="primary-button detail-nav-action" href="${navigateUrl}" target="_blank" rel="noreferrer">高德导航</a>
       <button class="secondary-button favorite-action ${isSaved ? 'saved' : ''}" id="detailFavorite" type="button" aria-label="${isSaved ? '取消收藏' : '收藏地点'}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.5c0 5.1-8.8 10.4-8.8 10.4S3.2 13.6 3.2 8.5A4.6 4.6 0 0 1 12 6.7a4.6 4.6 0 0 1 8.8 1.8Z"/></svg>
       </button>
+      <button class="secondary-button detail-utility-action" id="detailListButton" type="button">清单</button>
+      <button class="secondary-button detail-utility-action" id="detailShareButton" type="button">分享卡片</button>
     </div>
     <div class="detail-metrics">
       <div class="metric-card"><span>安静程度</span><strong>${place.quietLevel >= 4 ? '适合专注工作' : place.quietLevel >= 3 ? '一般' : '偏嘈杂'}</strong>${quietBars(place.quietLevel)}</div>
@@ -317,6 +734,8 @@ function renderDetail(place) {
     ${place.isDemo ? '<div class="detail-footnote">本条为首版界面演示数据，正式公开前请在后台替换为经过核实的真实地点。</div>' : ''}
   `;
   $('#detailFavorite').addEventListener('click', () => toggleFavorite(place.id));
+  $('#detailListButton')?.addEventListener('click', () => openListPicker(place));
+  $('#detailShareButton')?.addEventListener('click', () => sharePlaceCard(place));
   $('#detailReviewButton')?.addEventListener('click', () => openReviewModal(place));
 }
 
@@ -344,31 +763,35 @@ function closeDetail() {
 
 function toggleFavorite(id) {
   if (state.favorites.has(id)) state.favorites.delete(id); else state.favorites.add(id);
-  localStorage.setItem('nwm-favorites', JSON.stringify([...state.favorites]));
+  try { localStorage.setItem('nwm-favorites', JSON.stringify([...state.favorites])); } catch {}
   if (state.selected?.id === id) renderDetail(state.selected);
   renderFavorites();
+  renderListPicker();
   showToast(state.favorites.has(id) ? '已加入收藏' : '已取消收藏');
 }
 
 function renderFavorites() {
-  const list = $('#favoriteList');
-  const items = state.places.filter((place) => state.favorites.has(place.id));
+  renderSavedListTabs();
+  const listNode = $('#favoriteList');
+  const descriptor = getSavedListDescriptor(state.activeSavedList);
+  const ids = descriptor.placeIds;
+  const items = ids.map((id) => state.places.find((place) => place.id === id)).filter(Boolean);
   if (!items.length) {
-    list.innerHTML = '<div class="favorite-empty">还没有收藏地点。打开任意地点详情即可收藏。</div>';
-    return;
+    listNode.innerHTML = `<div class="favorite-empty">「${escapeHtml(descriptor.name)}」里还没有地点。打开地点详情后可以收藏，或加入自定义清单。</div>${descriptor.builtIn ? '' : `<button type="button" class="delete-list-button" data-delete-list="${escapeHtml(descriptor.id)}">删除这个清单</button>`}`;
+  } else {
+    listNode.innerHTML = `${items.map((place) => `
+      <div class="favorite-item">
+        <span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
+        <button type="button" data-favorite-place="${escapeHtml(place.id)}"><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.metroStation || place.address)}</small></button>
+        <button class="icon-button" type="button" data-remove-saved="${escapeHtml(place.id)}" aria-label="从清单移除"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>`).join('')}${descriptor.builtIn ? '' : `<button type="button" class="delete-list-button" data-delete-list="${escapeHtml(descriptor.id)}">删除这个清单</button>`}`;
   }
-  list.innerHTML = items.map((place) => `
-    <div class="favorite-item">
-      <span class="category-icon category-${escapeHtml(place.category)}">${categoryIconHtml(place.category)}</span>
-      <button type="button" data-favorite-place="${escapeHtml(place.id)}"><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.metroStation || place.address)}</small></button>
-      <button class="icon-button" type="button" data-remove-favorite="${escapeHtml(place.id)}" aria-label="取消收藏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-    </div>
-  `).join('');
-  $$('[data-favorite-place]', list).forEach((button) => button.addEventListener('click', () => {
+  $$('[data-favorite-place]', listNode).forEach((button) => button.addEventListener('click', () => {
     $('#favoriteModal').close();
     selectPlace(button.dataset.favoritePlace, true);
   }));
-  $$('[data-remove-favorite]', list).forEach((button) => button.addEventListener('click', () => toggleFavorite(button.dataset.removeFavorite)));
+  $$('[data-remove-saved]', listNode).forEach((button) => button.addEventListener('click', () => togglePlaceInList(button.dataset.removeSaved, descriptor.id)));
+  $$('[data-delete-list]', listNode).forEach((button) => button.addEventListener('click', () => deleteOfficeList(button.dataset.deleteList)));
 }
 
 function setStatus(message, healthy = true) {
@@ -989,6 +1412,23 @@ function wireEvents() {
     renderFavorites();
     openModal('favoriteModal');
   });
+  $('#todayWorkButton').addEventListener('click', openRecommendations);
+  $$('#recommendScenes [data-recommend-scene]').forEach((button) => button.addEventListener('click', () => {
+    state.recommendScene = button.dataset.recommendScene;
+    $$('#recommendScenes [data-recommend-scene]').forEach((item) => item.classList.toggle('active', item === button));
+    renderRecommendations();
+  }));
+  $('#recommendLocateButton').addEventListener('click', locateForRecommendation);
+  $('#newListForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const input = $('#newListName');
+    const list = createOfficeList(input.value);
+    if (!list) return;
+    input.value = '';
+    state.activeSavedList = list.id;
+    renderFavorites();
+    showToast(`已新建清单「${list.name}」`);
+  });
   $('#submitOpen').addEventListener('click', async () => {
     setSubmissionStep(1);
     openModal('submitModal');
@@ -1064,6 +1504,7 @@ function wireEvents() {
 }
 
 async function init() {
+  normalizeOfficeLists();
   wireEvents();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker registration failed:', error));
@@ -1078,7 +1519,12 @@ async function init() {
     $('#appNameEn').textContent = config.appNameEn;
     document.title = config.appName;
     await initMap();
-    if (new URLSearchParams(window.location.search).get('action') === 'submit') {
+    const initialParams = new URLSearchParams(window.location.search);
+    const sharedPlaceId = initialParams.get('place');
+    if (sharedPlaceId && state.places.some((place) => place.id === sharedPlaceId)) {
+      selectPlace(sharedPlaceId, true);
+    }
+    if (initialParams.get('action') === 'submit') {
       setSubmissionStep(1);
       openModal('submitModal');
       await new Promise((resolve) => requestAnimationFrame(resolve));

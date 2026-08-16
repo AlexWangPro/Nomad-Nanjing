@@ -1,6 +1,6 @@
 {
   "name": "nomad-nanjing",
-  "version": "3.9.0",
+  "version": "4.0.0",
   "private": true,
   "description": "Nomad Nanjing Railway edition: a curated, moderated map of laptop-friendly workspaces in Nanjing.",
   "type": "module",

@@ -1,5 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=3.9.0';
-import { compressImageForUpload } from './image-compression.js?v=3.9.0';
+import { mountLocationPicker } from './location-picker.js?v=4.0.0';
+import { compressImageForUpload } from './image-compression.js?v=4.0.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
