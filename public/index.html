@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=4.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.1.0" />
 </head>
 <body class="public-page">
   <div id="app" class="app-shell">
@@ -127,19 +127,19 @@
           </div>
         </fieldset>
         <section class="location-picker" id="publicLocationPicker">
-          <div class="location-picker-heading"><div><strong>搜索或自行标注位置 *</strong><span>搜索店名、定位到附近，或直接点击地图；可从周边地点中一键放置地点戳。</span></div></div>
+          <div class="location-picker-heading"><div><strong>搜索或自行标注位置 *</strong><span>先定位到当前位置，再输入店名，系统会优先推荐离你最近的门店；也可以直接点击地图自行标注。</span></div></div>
           <div class="location-search-row">
             <input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" />
             <button class="secondary-button" type="button" data-location-search-button>搜索</button>
           </div>
-          <p class="location-status" data-location-status>输入两个字以上搜索；高德未收录时，直接点击地图自行标注。</p>
+          <div class="location-picker-map" data-location-map aria-label="选择地点位置"></div>
+          <p class="location-status" data-location-status>建议先点地图上的“定位到我”，再输入店名；系统会按距离优先推荐最近门店。</p>
           <div class="location-search-results" data-location-results hidden></div>
           <div class="manual-location-fields form-grid two-col">
             <label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name required maxlength="120" placeholder="搜索后自动填写，也可自行输入" /></label>
             <label><span>详细地址 *</span><input name="address" data-location-address required maxlength="240" placeholder="手动点地图后，请直接填写地址" /></label>
             <label class="manual-location-note"><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧、从西门进入更近" /></label>
           </div>
-          <div class="location-picker-map" data-location-map aria-label="选择地点位置"></div>
           <div class="location-summary" data-location-summary></div>
           <input name="lng" type="hidden" required />
           <input name="lat" type="hidden" required />
@@ -353,6 +353,6 @@
     </div>
   </template>
 
-  <script type="module" src="/app.js?v=4.0.0"></script>
+  <script type="module" src="/app.js?v=4.1.0"></script>
 </body>
 </html>

@@ -940,7 +940,9 @@ body.admin-page { overflow: auto; background: #eef1ed; }
 .review-modal .review-form {
   width: min(640px, calc(100vw - 28px));
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 28px;
   background: #fff;
 }
@@ -1300,4 +1302,108 @@ body.admin-page { overflow: auto; background: #eef1ed; }
   .recommend-result-card { grid-template-columns: 64px minmax(0,1fr) 18px; gap: 9px; padding: 8px; }
   .recommend-result-card > img, .recommend-result-icon { width: 64px; height: 62px; border-radius: 12px; }
   .recommend-result-copy b { max-width: 100%; }
+}
+
+
+/* v4.1 location-first submission + mobile review scroll fix */
+.location-map-shell {
+  margin-top: 10px;
+}
+.location-map-tools {
+  top: 12px;
+  left: 12px;
+  right: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.location-map-tool.primary {
+  min-height: 44px;
+  padding: 0 15px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 10px 24px rgba(31,107,82,.28);
+}
+.location-map-tool.primary:hover,
+.location-map-tool.primary:focus-visible {
+  border-color: #155d47;
+  background: #155d47;
+  color: #fff;
+  outline: none;
+}
+.location-map-tool.primary svg {
+  width: 18px;
+  height: 18px;
+}
+.location-map-tool:not(.primary) {
+  min-height: 42px;
+  background: rgba(255,255,255,.96);
+}
+.location-search-row + .location-map-shell {
+  margin-bottom: 8px;
+}
+.location-picker .location-status {
+  margin-top: 9px;
+}
+
+/* The review form itself is the scroll container. This works even when the mobile page body is locked. */
+.review-modal .review-form {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
+}
+.review-modal .review-submit-area {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  box-shadow: 0 -10px 24px rgba(31,43,37,.06);
+}
+
+@media (max-width: 640px) {
+  .location-map-shell { margin-top: 8px; }
+  .location-map-tools {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    justify-content: space-between;
+  }
+  .location-map-tool.primary {
+    min-height: 44px;
+    padding: 0 13px;
+    font-size: 12px;
+  }
+  .location-map-tool.primary span { display: inline; }
+  .location-map-tool:not(.primary) span { display: none; }
+  .location-map-tool:not(.primary) {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+  .location-picker-map,
+  .location-picker.compact .location-picker-map {
+    height: 230px;
+  }
+  .review-modal {
+    margin: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    padding: max(6px, env(safe-area-inset-top)) 6px max(6px, env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+  .review-modal .review-form {
+    width: 100%;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .review-modal .review-submit-area {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
 }

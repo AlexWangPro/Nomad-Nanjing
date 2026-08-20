@@ -1,4 +1,4 @@
-const VERSION = 'nomad-nanjing-v4.0.0';
+const VERSION = 'nomad-nanjing-v4.1.0';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 // Network-only: always display the latest Railway deployment instead of stale cached UI.

@@ -164,12 +164,19 @@ export async function mountLocationPicker({
     mapShell.appendChild(mapNode);
   }
 
+  // Keep the map directly under the search field on every public/admin picker.
+  // This makes the geographic context visible before the user chooses a POI or types a manual address.
+  const searchRow = searchInput.closest('.location-search-row');
+  if (searchRow && searchRow.parentNode === mapShell.parentNode) {
+    searchRow.insertAdjacentElement('afterend', mapShell);
+  }
+
   const mapTools = document.createElement('div');
   mapTools.className = 'location-map-tools';
   mapTools.dataset.locationGenerated = 'true';
   mapTools.innerHTML = `
     <button type="button" class="location-map-tool primary" data-location-locate aria-label="定位到我的位置">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>定位到我</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>定位到我 · 推荐最近</span>
     </button>
     <button type="button" class="location-map-tool" data-location-nearby aria-label="搜索地图中心周边地点">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg><span>此处周边</span>

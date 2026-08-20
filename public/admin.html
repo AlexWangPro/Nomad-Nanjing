@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nomad Nanjing" />
-  <link rel="stylesheet" href="/styles.css?v=4.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.1.0" />
 </head>
 <body class="admin-page">
   <div class="admin-shell">
@@ -103,12 +103,12 @@
                   <label><span>总体结论 *</span><select name="overallSuitability" required><option value="excellent">非常适合办公</option><option value="good" selected>基本适合办公</option><option value="limited">只适合短暂停留</option><option value="unsuitable">不适合办公</option></select></label>
                 </div>
                 <section class="location-picker compact" id="portalLocationPicker">
-                  <div class="location-picker-heading"><div><strong>搜索或自行标注地点 *</strong><span>可搜索店名、定位到附近或点击地图，并从周边地点中选择地址。</span></div></div>
+                  <div class="location-picker-heading"><div><strong>搜索或自行标注地点 *</strong><span>先定位到当前位置，再输入店名，优先推荐最近门店；也可点击地图自行标注。</span></div></div>
                   <div class="location-search-row"><input type="search" data-location-search placeholder="搜索高德店名，例如：星巴克德基广场" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
-                  <p class="location-status" data-location-status>输入店名搜索，或直接点击地图自行标注。</p>
+                  <div class="location-picker-map" data-location-map></div>
+                  <p class="location-status" data-location-status>建议先定位，再输入店名，系统会优先推荐离你最近的匹配地点。</p>
                   <div class="location-search-results" data-location-results hidden></div>
                   <div class="manual-location-fields form-grid two-col"><label><span>店名 / 地点名称 *</span><input name="placeName" data-location-custom-name maxlength="120" required placeholder="搜索后自动填写，也可自行输入" /></label><label><span>详细地址 *</span><input name="address" data-location-address maxlength="240" required placeholder="手动点地图后，请直接填写地址" /></label><label class="manual-location-note"><span>位置备注（选填）</span><input name="placeNote" maxlength="500" placeholder="例如：商场三楼北侧" /></label></div>
-                  <div class="location-picker-map" data-location-map></div>
                   <div class="location-summary" data-location-summary></div>
                   <input name="lng" type="hidden" required /><input name="lat" type="hidden" required /><input name="amapPoiId" type="hidden" /><input name="district" type="hidden" />
                 </section>
@@ -150,6 +150,6 @@
   <aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
     <div id="drawerContent"></div>
   </aside>
-  <script type="module" src="/admin.js?v=4.0.0"></script>
+  <script type="module" src="/admin.js?v=4.1.0"></script>
 </body>
 </html>

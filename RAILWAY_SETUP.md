@@ -70,7 +70,7 @@ https://你的域名/api/health
 ```json
 {
   "ok": true,
-  "version": "4.0.0",
+  "version": "4.1.0",
   "storage": {
     "engine": "sqlite",
     "persistentVolume": true,

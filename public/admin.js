@@ -1,5 +1,5 @@
-import { mountLocationPicker } from './location-picker.js?v=4.0.0';
-import { compressImageForUpload } from './image-compression.js?v=4.0.0';
+import { mountLocationPicker } from './location-picker.js?v=4.1.0';
+import { compressImageForUpload } from './image-compression.js?v=4.1.0';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -384,7 +384,8 @@ function openSubmission(id) {
         <details class="review-location-details"><summary>位置需要修正？展开地图</summary>
           <section class="location-picker compact" id="reviewLocationPicker">
             <div class="location-search-row"><input type="search" data-location-search placeholder="输入店名重新搜索" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
-            <p class="location-status" data-location-status>当前位置来自提交者。</p><div class="location-search-results" data-location-results hidden></div><div class="location-picker-map" data-location-map></div><div class="location-summary" data-location-summary></div>
+            <div class="location-picker-map" data-location-map></div>
+            <p class="location-status" data-location-status>当前位置来自提交者；也可重新定位后按距离推荐。</p><div class="location-search-results" data-location-results hidden></div><div class="location-summary" data-location-summary></div>
             <label><span>详细地址 *</span><input name="address" data-location-address required value="${escapeHtml(item.address || '')}" /></label><input name="lng" type="hidden" value="${item.lng ?? ''}" /><input name="lat" type="hidden" value="${item.lat ?? ''}" /><input name="district" type="hidden" value="${escapeHtml(item.district || '')}" /><input name="amapPoiId" type="hidden" value="${escapeHtml(item.amapPoiId || '')}" />
           </section>
         </details>
@@ -452,11 +453,11 @@ function placeForm(place = {}) {
     <form class="admin-form" id="placeForm">
       <div class="form-grid two-col"><label><span>地点名称 *</span><input name="name" required value="${escapeHtml(place.name || '')}" /></label><label><span>类型</span><select name="category">${Object.entries(categoryLabel).map(([value,label]) => `<option value="${value}" ${place.category === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
       <section class="location-picker compact" id="placeLocationPicker">
-        <div class="location-picker-heading"><div><strong>搜索或自行标注精确位置 *</strong><span>高德未收录时，可以直接点击地图并自行填写名称。</span></div></div>
+        <div class="location-picker-heading"><div><strong>搜索或自行标注精确位置 *</strong><span>先定位再输入店名可优先推荐最近门店；高德未收录时也可直接点击地图。</span></div></div>
         <div class="location-search-row"><input type="search" data-location-search placeholder="输入店名即可，如：星巴克、金陵图书馆" autocomplete="off" /><button class="secondary-button" type="button" data-location-search-button>搜索</button></div>
-        <p class="location-status" data-location-status>输入店名搜索，或直接点击地图自行标注。</p>
-        <div class="location-search-results" data-location-results hidden></div>
         <div class="location-picker-map" data-location-map></div>
+        <p class="location-status" data-location-status>建议先定位，再输入店名；系统会优先推荐离当前位置最近的门店。</p>
+        <div class="location-search-results" data-location-results hidden></div>
         <div class="location-summary" data-location-summary></div>
         <input name="lng" type="hidden" required value="${place.lng ?? ''}" />
         <input name="lat" type="hidden" required value="${place.lat ?? ''}" />
